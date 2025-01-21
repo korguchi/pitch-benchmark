@@ -15,6 +15,7 @@ from algorithms import (
     PENNPitchAlgorithm,
 )
 from datasets import PitchDatasetPTDB, PitchDatasetNSynth, PitchDatasetMDBStemSynth
+from noise import ESC50Noise, WhiteNoise
 
 
 def optimize_thresholds(
@@ -216,10 +217,7 @@ def evaluate_pitch_accuracy(
 
 
 def evaluate_pitch_algorithms(
-    dataset: Dataset,
-    fmin: int,
-    fmax: int,
-    algorithms: List[Tuple],
+    dataset: Dataset, fmin: int, fmax: int, algorithms: List[Tuple], noise_class
 ) -> Dict:
     """
     Evaluate multiple pitch detection algorithms with comprehensive metrics.
@@ -229,6 +227,7 @@ def evaluate_pitch_algorithms(
         fmin: Minimum frequency in Hz
         fmax: Maximum frequency in Hz
         algorithms: List of tuples (algorithm_class, threshold)
+        noise_class: Noise class
 
     Returns:
         Dictionary containing comprehensive evaluation metrics for each algorithm
@@ -251,7 +250,13 @@ def evaluate_pitch_algorithms(
         ):
             try:
                 sample = dataset[idx]
-                audio = sample["audio"].numpy()
+                audio = sample["audio"]
+
+                # Apply noise if specified
+                if noise_class is not None:
+                    audio = noise_class.mix_noise(audio).squeeze(0)
+
+                audio = audio.numpy()
                 true_pitch = sample["pitch"].numpy()
                 true_voicing = sample["periodicity"].numpy()
 
@@ -327,7 +332,7 @@ def print_evaluation_results(metrics: Dict):
         if np.isnan(mean) or np.isnan(std):
             return "N/A"
         if percentage:
-            return f"{mean*100:>6.1f} ± {std*100:<4.1f}%"
+            return f"{mean * 100:>6.1f} ± {std * 100:<4.1f}%"
         return f"{mean:>6.2f} ± {std:<4.2f}"
 
     sections = [
@@ -501,23 +506,52 @@ def calculate_combined_score(metrics_dict: Dict) -> Tuple[float, float]:
 
 
 if __name__ == "__main__":
-    random.seed(3)
-    torch.manual_seed(3)
-    np.random.seed(3)
+    parser = argparse.ArgumentParser(
+        description="Evaluate pitch detection algorithms on a dataset with optional noise condition.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
 
-    parser = argparse.ArgumentParser(description="Evaluate pitch detection algorithms")
-    parser.add_argument(
+    # Required arguments
+    required = parser.add_argument_group("required arguments")
+    required.add_argument(
         "--dataset",
         type=str,
         required=True,
         choices=["PTDB", "NSynth", "MDBStemSynth"],
         help="Dataset to evaluate on",
     )
-    parser.add_argument(
+    required.add_argument(
         "--data-dir", type=str, required=True, help="Path to dataset directory"
     )
+    required.add_argument(
+        "--algorithms",
+        type=str,
+        nargs="+",
+        default=["YAAPT", "Praat", "SWIPE", "RAPT", "pYIN", "CREPE", "PENN"],
+        choices=["YAAPT", "Praat", "SWIPE", "RAPT", "pYIN", "CREPE", "PENN"],
+        help="List of pitch detection algorithms to evaluate",
+    )
+
+    # Optional arguments
     parser.add_argument(
-        "--sample-rate", type=int, default=22050, help="Audio sample rate"
+        "--noise-type",
+        type=str,
+        choices=["white", "esc50"],
+        help="Type of noise to apply. If not specified, no noise is applied",
+    )
+    parser.add_argument(
+        "--snr",
+        type=float,
+        default=15.0,
+        help="Signal-to-Noise Ratio in dB for noise addition",
+    )
+    parser.add_argument(
+        "--esc50-dir",
+        type=str,
+        help="Path to ESC-50 dataset (required if noise-type is esc50)",
+    )
+    parser.add_argument(
+        "--sample-rate", type=int, default=22050, help="Audio sample rate in Hz"
     )
     parser.add_argument("--hop-size", type=int, default=256, help="Hop size in samples")
     parser.add_argument(
@@ -526,37 +560,56 @@ if __name__ == "__main__":
     parser.add_argument(
         "--fmax", type=float, default=300.0, help="Maximum frequency in Hz"
     )
+    parser.add_argument(
+        "--seed", type=int, default=3, help="Random seed for reproducibility"
+    )
+    parser.add_argument(
+        "--validation-size",
+        type=float,
+        default=0.01,
+        help="Fraction of dataset to use for threshold optimization",
+    )
 
     args = parser.parse_args()
 
+    # Validate ESC50 directory if ESC50 noise is selected
+    if args.noise_type == "esc50" and not args.esc50_dir:
+        parser.error("--esc50-dir is required when using esc50 noise")
+
+    # Set random seeds
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    # Initialize dataset
     dataset_classes = {
         "PTDB": PitchDatasetPTDB,
         "NSynth": PitchDatasetNSynth,
         "MDBStemSynth": PitchDatasetMDBStemSynth,
     }
-
-    dataset_class = dataset_classes[args.dataset]
-    dataset = dataset_class(
+    dataset = dataset_classes[args.dataset](
         root_dir=args.data_dir,
         use_cache=False,
         sample_rate=args.sample_rate,
         hop_size=args.hop_size,
     )
 
-    algorithms = [
-        YAAPTPitchAlgorithm,
-        PraatPitchAlgorithm,
-        SWIPEPitchAlgorithm,
-        RAPTPitchAlgorithm,
-        pYINPitchAlgorithm,
-        TorchCREPEPitchAlgorithm,
-        PENNPitchAlgorithm,
-    ]
+    # Map algorithm names to classes
+    algo_classes = {
+        "YAAPT": YAAPTPitchAlgorithm,
+        "Praat": PraatPitchAlgorithm,
+        "SWIPE": SWIPEPitchAlgorithm,
+        "RAPT": RAPTPitchAlgorithm,
+        "pYIN": pYINPitchAlgorithm,
+        "CREPE": TorchCREPEPitchAlgorithm,
+        "PENN": PENNPitchAlgorithm,
+    }
+    algorithms = [algo_classes[name] for name in args.algorithms]
 
     # Find optimal thresholds
     optimal_thresholds = optimize_thresholds(
         dataset=dataset,
-        validation_size=0.01,
+        validation_size=args.validation_size,
         fmin=args.fmin,
         fmax=args.fmax,
         algorithms=algorithms,
@@ -572,8 +625,27 @@ if __name__ == "__main__":
         for algo_class in algorithms
     ]
 
-    metrics = evaluate_pitch_algorithms(
-        fmin=args.fmin, fmax=args.fmax, dataset=dataset, algorithms=optimized_algorithms
-    )
+    # Set up noise configuration
+    noise = None
+    if args.noise_type == "white":
+        noise = WhiteNoise(snr_range=[args.snr, args.snr])
+    elif args.noise_type == "esc50":
+        noise = ESC50Noise(
+            data_dir=args.esc50_dir,
+            snr_range=[args.snr, args.snr],
+            target_sample_rate=args.sample_rate,
+        )
 
+    # Run evaluation
+    print(
+        f"\nTesting with{' ' + args.noise_type if args.noise_type else 'out'} noise"
+        + (f" (SNR: {args.snr}dB)" if args.noise_type else "")
+    )
+    metrics = evaluate_pitch_algorithms(
+        fmin=args.fmin,
+        fmax=args.fmax,
+        dataset=dataset,
+        algorithms=optimized_algorithms,
+        noise_class=noise,
+    )
     print_evaluation_results(metrics)

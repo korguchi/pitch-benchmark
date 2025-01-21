@@ -55,7 +55,7 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
             raise ValueError(f"fmin ({fmin} Hz) must be non-negative")
         if fmax > sample_rate / 2:
             raise ValueError(
-                f"fmax ({fmax} Hz) must not exceed Nyquist frequency ({sample_rate/2} Hz)"
+                f"fmax ({fmax} Hz) must not exceed Nyquist frequency ({sample_rate / 2} Hz)"
             )
 
     def _validate_audio(self, audio: torch.Tensor) -> torch.Tensor:
