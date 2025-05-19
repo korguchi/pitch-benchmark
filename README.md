@@ -39,7 +39,7 @@ Praat emerges as the best choice for pitch detection, offering high pitch accura
 ### Installation
 
 ```bash
-pip install torchcrepe crepe praat-parselmouth pysptk librosa penn AMFM-decompy
+pip install torchcrepe crepe praat-parselmouth pysptk librosa penn==0.0.14 AMFM-decompy pandas
 ```
 
 ### Basic Usage

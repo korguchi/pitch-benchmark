@@ -74,6 +74,9 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         # Clean up audio values
         audio = torch.nan_to_num(audio, nan=0)
 
+        if torch.all(audio == 0):
+            raise ValueError(f"Silent audio!")
+
         if self.normalize_audio:
             max_abs = audio.abs().max()
             if max_abs > 1:  # Normalize only if the range exceeds -1 to 1
@@ -107,6 +110,9 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
 
         # Ensure periodicity is binary
         periodicity = torch.round(periodicity).clamp(0, 1)
+
+        if torch.all(periodicity == 0) or torch.all(pitch == 0):
+            raise ValueError(f"No pitch!")
 
         # Zero out pitch where periodicity is 0
         pitch = pitch * periodicity
@@ -288,6 +294,8 @@ class PitchDatasetNSynth(PitchDataset):
             Defaults to 27.5 Hz (A0)
         fmax (float, optional): Maximum frequency in Hz. Notes above this frequency will be filtered out.
             Defaults to 4186.0 Hz (C8)
+        silence_threshold_db (float, optional): Threshold in dB below which audio is considered silent.
+            Defaults to -40.0
         **kwargs: Additional arguments passed to PitchDataset base class
 
     Raises:
@@ -333,6 +341,7 @@ class PitchDatasetNSynth(PitchDataset):
         hop_size: int = 160,
         fmin: float = 27.5,  # A0 (MIDI note 21)
         fmax: float = 4186.0,  # C8 (MIDI note 108)
+        silence_threshold_db: float = -40.0,
         **kwargs,
     ):
         # Initialize parent class with NSynth-specific defaults
@@ -343,6 +352,9 @@ class PitchDatasetNSynth(PitchDataset):
         self.root_dir = Path(root_dir)
         self.use_cache = use_cache
         self.data_cache: Dict[int, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
+
+        # Parameters for audio energy detection
+        self.silence_threshold_db = silence_threshold_db
 
         # Load metadata
         json_path = self.root_dir / "examples.json"
@@ -431,6 +443,68 @@ class PitchDatasetNSynth(PitchDataset):
         """
         return 440.0 * (2.0 ** ((midi_note - 69) / 12.0))
 
+    def _detect_voiced_frames(
+        self, waveform: torch.Tensor, num_frames: int, frame_length: int = None
+    ) -> torch.Tensor:
+        """
+        Detect voiced frames in the audio by finding portions above the silence threshold.
+        Uses vectorized PyTorch operations for faster computation of RMS energy.
+
+        Args:
+            waveform (torch.Tensor): Input audio tensor
+            num_frames (int): Number of frames to analyze
+            frame_length (int, optional): Number of samples per frame. Defaults to hop_size.
+
+        Returns:
+            torch.Tensor: Binary tensor with 1s for voiced frames and 0s for silent frames
+        """
+        if frame_length is None:
+            frame_length = self.hop_size
+
+        # Ensure waveform is 1D
+        waveform = waveform.squeeze()
+
+        # Pad the waveform to ensure consistent frame sizes
+        # This avoids issues with incomplete frames at the end
+        total_samples_needed = (num_frames - 1) * self.hop_size + frame_length
+        padding_needed = max(0, total_samples_needed - waveform.size(-1))
+        if padding_needed > 0:
+            waveform = torch.nn.functional.pad(waveform, (0, padding_needed))
+
+        # Use unfold for faster frame extraction (vectorized operation)
+        # This creates a tensor of shape [num_frames, frame_length]
+        frames = waveform.unfold(0, frame_length, self.hop_size)[:num_frames]
+
+        # Calculate RMS for all frames at once (vectorized)
+        # Square all samples, take mean across frame dimension, then sqrt
+        rms = torch.sqrt(torch.mean(frames**2, dim=1))
+
+        # Convert to dB scale with safe handling of small values
+        eps = 1e-10
+        max_rms = torch.max(rms)
+
+        # Avoid division by zero
+        if max_rms > eps:
+            # Convert to dB: 20 * log10(amplitude / reference)
+            rms_db = 20 * torch.log10(torch.clamp(rms / max_rms, min=1e-5))
+        else:
+            # If max_rms is too small, all frames are likely silent
+            rms_db = torch.full_like(rms, -100.0)
+
+        # Find the indices of frames that are NOT silent
+        non_silent_frames = (rms_db > self.silence_threshold_db).nonzero(as_tuple=True)[
+            0
+        ]
+
+        voiced_mask = torch.zeros(num_frames)
+
+        if len(non_silent_frames) > 0:
+            # The last non-silent frame index
+            last_voiced_frame_index = non_silent_frames[-1]
+            voiced_mask[: last_voiced_frame_index + 1] = 1
+
+        return voiced_mask
+
     def __len__(self) -> int:
         """Returns the number of examples in the filtered dataset."""
         return len(self.examples)
@@ -471,7 +545,9 @@ class PitchDatasetNSynth(PitchDataset):
             # NSynth uses constant pitch throughout each note
             num_frames = 1 + (waveform.size(-1) // self.hop_size)
             pitch = torch.full((num_frames,), info["pitch_hz"])
-            periodicity = torch.ones_like(pitch)
+
+            # Detect voiced frames using energy-based method
+            periodicity = self._detect_voiced_frames(waveform, num_frames)
 
             # Process the sample
             waveform, pitch, periodicity = self.process_sample(

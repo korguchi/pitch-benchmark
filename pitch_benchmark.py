@@ -78,7 +78,10 @@ def optimize_thresholds(
                     metrics = evaluate_voicing_detection(pred_voicing, true_voicing)
                     f1_scores.append(metrics["f1"])
 
-                except Exception:
+                except Exception as e:
+                    print(
+                        f"Error processing {algo_class.__name__} with threshold {threshold} on sample {idx}: {e}"
+                    )
                     continue
 
             if not f1_scores or np.isnan(f1_scores).any():
