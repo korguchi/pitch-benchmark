@@ -10,13 +10,13 @@ Praat emerges as the best choice for pitch detection, offering high pitch accura
 
 | Algorithm | NSynth | PTDB | MDB-STEM-Synth | Average |
 |-----------|---------|---------|----------------|----------|
-| YAAPT | 56.8% | 79.3% | 82.8% | 73.0% |
-| Praat | 72.8% | 78.5% | **91.7%** | 81.0% |
-| SWIPE | 65.3% | 79.6% | 90.3% | 78.4% |
-| RAPT | 67.7% | 67.5% | **91.7%** | 75.6% |
-| pYIN | **77.8%** | **81.7%** | 87.6% | **82.4%** |
+| YAAPT | 60.1% | 79.3% | 82.8% | 74.1% |
+| Praat | **81.2%** | 78.5% | **91.7%** | **83.8%** |
+| SWIPE | 65.7% | 79.6% | 90.3% | 78.5% |
+| RAPT | 73.3% | 67.5% | **91.7%** | 77.5% |
+| pYIN | 81.0% | **81.7%** | 87.6% | 83.4% |
 | TorchCREPE | N/A* | 78.2% | N/A* | N/A* |
-| PENN | 64.7% | N/A* | N/A* | N/A* |
+| PENN | 70.5% | N/A* | N/A* | N/A* |
 
 *N/A indicates the algorithm was excluded from testing on this dataset as it was used in training
 
@@ -24,13 +24,13 @@ Praat emerges as the best choice for pitch detection, offering high pitch accura
 
 | Algorithm | NSynth | PTDB | MDB-STEM-Synth | Average |
 |-----------|---------|---------|----------------|----------|
-| YAAPT | 1621.25 | 103.48 | 392.33 | 705.69 |
-| Praat | **499.38** | **86.76** | **105.75** | **230.63** |
-| SWIPE | 953.01 | 99.67 | 181.01 | 411.23 |
-| RAPT | 1166.45 | 109.97 | 152.39 | 476.27 |
-| pYIN | 685.57 | 131.40 | 168.22 | 328.40 |
+| YAAPT | 1607.24 | 103.48 | 392.33 | 701.02 |
+| Praat | **499.35** | **86.76** | **105.75** | **230.62** |
+| SWIPE | 993.88 | 99.67 | 181.01 | 424.85 |
+| RAPT | 1150.29 | 109.97 | 152.39 | 470.88 |
+| pYIN | 564.86 | 131.40 | 168.22 | 288.16 |
 | TorchCREPE | N/A* | 89.17 | N/A* | N/A* |
-| PENN | 1221.15 | N/A* | N/A* | N/A* |
+| PENN | 976.37 | N/A* | N/A* | N/A* |
 
 *N/A indicates the algorithm was excluded from testing on this dataset as it was used in training
 
