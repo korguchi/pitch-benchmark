@@ -19,8 +19,13 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
     Args:
         sample_rate (int): Target sample rate in Hz
         hop_size (int): Number of audio samples between consecutive frames
-        fmin (float, optional): Minimum frequency in Hz. Values below will be clipped to this. Defaults to 20.0
-        fmax (float, optional): Maximum frequency in Hz. Values above will be clipped to this. Defaults to 2000.0
+        fmin (float, optional): Minimum frequency in Hz. Defaults to 20.0
+        fmax (float, optional): Maximum frequency in Hz. Defaults to 2000.0
+        clip_pitch (bool, optional): Whether to clip pitch values to [fmin, fmax] range.
+            If False (default), out-of-range pitch values are preserved but their
+            periodicity is set to zero, indicating unreliable pitch detection.
+            This prevents false pitch information while maintaining data integrity.
+            Defaults to False
         normalize_audio (bool, optional): Whether to normalize audio to [-1, 1]. Defaults to True
     """
 
@@ -30,6 +35,7 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         hop_size: int,
         fmin: float = 20.0,
         fmax: float = 2000.0,
+        clip_pitch: bool = False,
         normalize_audio: bool = True,
     ):
         super().__init__()
@@ -39,6 +45,7 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         self.hop_size = hop_size
         self.fmin = fmin
         self.fmax = fmax
+        self.clip_pitch = clip_pitch
         self.normalize_audio = normalize_audio
 
     def _validate_init_params(
@@ -90,13 +97,19 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         """
         Validates and processes pitch and periodicity values.
 
+        By default, pitch values outside the [fmin, fmax] range are preserved
+        but their corresponding periodicity is set to zero. This approach maintains
+        data integrity while indicating that pitch detection is unreliable outside
+        the specified frequency range, avoiding false pitch information.
+
         Args:
             pitch (torch.Tensor): Pitch values
             periodicity (torch.Tensor): Periodicity values
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Processed pitch and periodicity values.
-                Pitch values are clipped to [fmin, fmax] range.
+                If clip_pitch=True, pitch values are clipped to [fmin, fmax] range.
+                If clip_pitch=False, out-of-range pitch values have periodicity set to 0.
         """
         if pitch.shape != periodicity.shape:
             raise ValueError(
@@ -105,17 +118,20 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
 
         # Clean up pitch values
         pitch = torch.nan_to_num(pitch, nan=self.fmin)
-        # Clip pitch values to valid range
-        pitch = torch.clamp(pitch, self.fmin, self.fmax)
 
         # Ensure periodicity is binary
         periodicity = torch.round(periodicity).clamp(0, 1)
 
+        if self.clip_pitch:
+            # Clip pitch values to valid range
+            pitch = torch.clamp(pitch, self.fmin, self.fmax)
+        else:
+            # Preserve pitch but zero periodicity for out-of-range values
+            out_of_range_mask = (pitch < self.fmin) | (pitch > self.fmax)
+            periodicity = periodicity * (~out_of_range_mask).float()
+
         if torch.all(periodicity == 0) or torch.all(pitch == 0):
             raise ValueError(f"No pitch!")
-
-        # Zero out pitch where periodicity is 0
-        pitch = pitch * periodicity
 
         return pitch, periodicity
 
@@ -275,7 +291,7 @@ class PitchDatasetNSynth(PitchDataset):
 
     This class handles loading and processing of the NSynth dataset, which contains
     musical notes from various instruments. It provides filtering capabilities based
-    on instrument types, families, note qualities, and pitch frequency ranges.
+    on instrument types, families and note qualities.
 
     Args:
         root_dir (str): Path to NSynth dataset directory containing examples.json and audio files
@@ -288,12 +304,6 @@ class PitchDatasetNSynth(PitchDataset):
             Valid options: ["bright", "dark", "distortion", "fast_decay", "long_release",
                           "multiphonic", "nonlinear_env", "percussive", "reverb", "tempo-synced"]
         use_cache (bool): Whether to cache loaded audio in memory. Defaults to True
-        sample_rate (int): Target sample rate for the audio. Passed to parent class
-        hop_size (int): Number of audio samples between consecutive frames. Passed to parent class
-        fmin (float, optional): Minimum frequency in Hz. Notes below this frequency will be filtered out.
-            Defaults to 27.5 Hz (A0)
-        fmax (float, optional): Maximum frequency in Hz. Notes above this frequency will be filtered out.
-            Defaults to 4186.0 Hz (C8)
         silence_threshold_db (float, optional): Threshold in dB below which audio is considered silent.
             Defaults to -40.0
         **kwargs: Additional arguments passed to PitchDataset base class
@@ -337,17 +347,11 @@ class PitchDatasetNSynth(PitchDataset):
         instrument_families: Optional[List[str]] = None,
         qualities: Optional[List[str]] = None,
         use_cache: bool = True,
-        sample_rate: int = 16000,
-        hop_size: int = 160,
-        fmin: float = 27.5,  # A0 (MIDI note 21)
-        fmax: float = 4186.0,  # C8 (MIDI note 108)
         silence_threshold_db: float = -40.0,
         **kwargs,
     ):
-        # Initialize parent class with NSynth-specific defaults
-        super().__init__(
-            sample_rate=sample_rate, hop_size=hop_size, fmin=fmin, fmax=fmax, **kwargs
-        )
+        # Initialize parent class
+        super().__init__(**kwargs)
 
         self.root_dir = Path(root_dir)
         self.use_cache = use_cache
@@ -381,18 +385,14 @@ class PitchDatasetNSynth(PitchDataset):
         instrument_sources: Optional[List[str]],
         instrument_families: Optional[List[str]],
         qualities: Optional[List[str]],
-        fmin: float,
-        fmax: float,
     ) -> List[Tuple[str, Dict]]:
         """
-        Filters and prepares examples based on specified criteria including pitch frequency range.
+        Filters and prepares examples based on specified criteria including instrument sources.
 
         Args:
             instrument_sources: List of instrument source types to include
             instrument_families: List of instrument family types to include
             qualities: List of note qualities to include
-            fmin: Minimum frequency in Hz to include
-            fmax: Maximum frequency in Hz to include
 
         Returns:
             List[Tuple[str, Dict]]: List of (note_id, metadata) pairs meeting all criteria
@@ -403,11 +403,7 @@ class PitchDatasetNSynth(PitchDataset):
             pitch_hz = self.midi_to_hz(info["pitch"])
             info["pitch_hz"] = pitch_hz
 
-            # Apply frequency range filter
-            if not (fmin <= pitch_hz <= fmax):
-                continue
-
-            # Apply other filters
+            # Apply filters
             if (
                 instrument_sources
                 and info["instrument_source_str"] not in instrument_sources
