@@ -139,8 +139,8 @@ def evaluate_voicing_detection(
             }
 
     # Normal case: algorithm made some positive predictions
-    precision = true_pos / (true_pos + false_pos)
-    recall = true_pos / (true_pos + false_neg)
+    precision = true_pos / (true_pos + false_pos) if (true_pos + false_pos) > 0 else 0.0
+    recall = true_pos / (true_pos + false_neg) if (true_pos + false_neg) > 0 else 0.0
 
     # Calculate F1 score
     f1 = (
@@ -262,6 +262,12 @@ def evaluate_pitch_algorithms(
                 audio = audio.numpy()
                 true_pitch = sample["pitch"].numpy()
                 true_voicing = sample["periodicity"].numpy()
+
+                # Skip any files without pitch
+                # This happens when the pitch is not in [fmin, fmax]
+                # For example: NSynth
+                if true_voicing.sum() == 0:
+                    continue
 
                 pred_pitch, pred_voicing = algo(audio, threshold)
 
