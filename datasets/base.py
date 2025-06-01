@@ -127,7 +127,7 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
             out_of_range_mask = (pitch < self.fmin) | (pitch > self.fmax)
             periodicity = periodicity * (~out_of_range_mask).float()
 
-        return pitch, periodicity
+        return pitch, periodicity.bool()
 
     def process_sample(
         self,

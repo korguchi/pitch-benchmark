@@ -110,35 +110,11 @@ def evaluate_voicing_detection(
 
     Returns:
         Dictionary containing precision, recall, and F1 metrics.
-        If algorithm predicts all frames as unvoiced:
-        - If ground truth has no voiced frames: precision=1, recall=1, f1=1
-        - If ground truth has voiced frames: precision=nan, recall=0, f1=0
     """
-    pred_voiced = pred_voiced.astype(np.bool_)
-    true_voiced = true_voiced.astype(np.bool_)
-
     true_pos = np.sum(pred_voiced & true_voiced)
     false_pos = np.sum(pred_voiced & ~true_voiced)
     false_neg = np.sum(~pred_voiced & true_voiced)
 
-    # Algorithm predicts all unvoiced (no positive predictions)
-    if np.sum(pred_voiced) == 0:
-        # If there were actually no voiced frames, this is correct
-        if np.sum(true_voiced) == 0:
-            return {
-                "precision": 1.0,
-                "recall": 1.0,
-                "f1": 1.0,
-            }
-        # If there were voiced frames, recall and F1 should be 0
-        else:
-            return {
-                "precision": np.nan,  # undefined as no positive predictions
-                "recall": 0.0,
-                "f1": 0.0,
-            }
-
-    # Normal case: algorithm made some positive predictions
     precision = true_pos / (true_pos + false_pos) if (true_pos + false_pos) > 0 else 0.0
     recall = true_pos / (true_pos + false_neg) if (true_pos + false_neg) > 0 else 0.0
 
@@ -157,7 +133,10 @@ def evaluate_voicing_detection(
 
 
 def evaluate_pitch_accuracy(
-    pitch_pred: np.ndarray, pitch_true: np.ndarray, epsilon: float = 50.0
+    pitch_pred: np.ndarray,
+    pitch_true: np.ndarray,
+    valid_mask: np.ndarray,
+    epsilon: float = 50.0,
 ) -> Dict:
     """
     Evaluate pitch accuracy between predicted and ground truth pitch values.
@@ -165,6 +144,7 @@ def evaluate_pitch_accuracy(
     Args:
         pitch_pred: Predicted pitch values in Hz (T,)
         pitch_true: Ground truth pitch values in Hz (T,)
+        valid_mask: Boolean array indicating which time steps contain valid pitch values for evaluation
         epsilon: Tolerance for RPA/RCA calculation in cents
 
     Returns:
@@ -174,14 +154,6 @@ def evaluate_pitch_accuracy(
         raise ValueError(
             f"Length mismatch: pred={len(pitch_pred)}, true={len(pitch_true)}"
         )
-
-    # Find frames with valid frequencies (non-zero and finite)
-    valid_mask = (
-        (pitch_pred > 0)
-        & (pitch_true > 0)
-        & np.isfinite(pitch_pred)
-        & np.isfinite(pitch_true)
-    )
 
     if not np.any(valid_mask):
         return {
@@ -266,16 +238,14 @@ def evaluate_pitch_algorithms(
                 # Skip any files without pitch
                 # This happens when the pitch is not in [fmin, fmax]
                 # For example: NSynth
-                if true_voicing.sum() == 0:
+                if not true_voicing.any():
                     continue
 
                 pred_pitch, pred_voicing = algo(audio, threshold)
-
                 voicing_metrics = evaluate_voicing_detection(pred_voicing, true_voicing)
 
                 pitch_metrics = evaluate_pitch_accuracy(
-                    pred_pitch,
-                    true_pitch,
+                    pred_pitch, true_pitch, pred_voicing & true_voicing
                 )
 
                 per_file_metrics.append(
