@@ -5,15 +5,7 @@ from typing import List, Dict, Tuple
 from tqdm import tqdm
 from torch.utils.data import Dataset, Subset
 import torch
-from algorithms import (
-    YAAPTPitchAlgorithm,
-    PraatPitchAlgorithm,
-    TorchCREPEPitchAlgorithm,
-    SWIPEPitchAlgorithm,
-    RAPTPitchAlgorithm,
-    pYINPitchAlgorithm,
-    PENNPitchAlgorithm,
-)
+from algorithms import get_algorithm
 from datasets import get_dataset, list_datasets
 from noise import ESC50Noise, WhiteNoise
 
@@ -472,7 +464,7 @@ if __name__ == "__main__":
         type=str,
         required=True,
         choices=list_datasets(),
-        help="Dataset to evaluate on"
+        help="Dataset to evaluate on",
     )
     required.add_argument(
         "--data-dir", type=str, required=True, help="Path to dataset directory"
@@ -545,16 +537,7 @@ if __name__ == "__main__":
     )
 
     # Map algorithm names to classes
-    algo_classes = {
-        "YAAPT": YAAPTPitchAlgorithm,
-        "Praat": PraatPitchAlgorithm,
-        "SWIPE": SWIPEPitchAlgorithm,
-        "RAPT": RAPTPitchAlgorithm,
-        "pYIN": pYINPitchAlgorithm,
-        "CREPE": TorchCREPEPitchAlgorithm,
-        "PENN": PENNPitchAlgorithm,
-    }
-    algorithms = [algo_classes[name] for name in args.algorithms]
+    algorithms = [get_algorithm(name) for name in args.algorithms]
 
     # Find optimal thresholds
     optimal_thresholds = optimize_thresholds(

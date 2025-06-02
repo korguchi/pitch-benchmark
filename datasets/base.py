@@ -163,7 +163,7 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         audio = self._validate_audio(audio)
 
         # Calculate target length for pitch and periodicity
-        target_length = 1 + audio.size(-1) // self.hop_size
+        target_length = audio.size(-1) // self.hop_size
 
         if target_length > 0:
             # Interpolate pitch and periodicity to match target length
