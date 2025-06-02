@@ -14,7 +14,7 @@ from algorithms import (
     pYINPitchAlgorithm,
     PENNPitchAlgorithm,
 )
-from datasets import PitchDatasetPTDB, PitchDatasetNSynth, PitchDatasetMDBStemSynth
+from datasets import get_dataset, list_datasets
 from noise import ESC50Noise, WhiteNoise
 
 
@@ -471,8 +471,8 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        choices=["PTDB", "NSynth", "MDBStemSynth"],
-        help="Dataset to evaluate on",
+        choices=list_datasets(),
+        help="Dataset to evaluate on"
     )
     required.add_argument(
         "--data-dir", type=str, required=True, help="Path to dataset directory"
@@ -536,12 +536,8 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     # Initialize dataset
-    dataset_classes = {
-        "PTDB": PitchDatasetPTDB,
-        "NSynth": PitchDatasetNSynth,
-        "MDBStemSynth": PitchDatasetMDBStemSynth,
-    }
-    dataset = dataset_classes[args.dataset](
+    dataset_class = get_dataset(args.dataset)
+    dataset = dataset_class(
         root_dir=args.data_dir,
         use_cache=False,
         sample_rate=args.sample_rate,
