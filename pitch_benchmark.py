@@ -172,7 +172,7 @@ def evaluate_pitch_accuracy(
     rmse = np.sqrt(np.mean((pred - true) ** 2))
 
     # Calculate cents difference
-    cents_diff = np.abs(1200 * np.log2(pred / true))
+    cents_diff = np.abs(1200 * np.log2(pred / (true + np.finfo(float).eps)))
 
     # Raw Pitch Accuracy (RPA)
     rpa = np.mean(cents_diff < epsilon)
@@ -208,7 +208,6 @@ def evaluate_pitch_algorithms(
         Dictionary containing comprehensive evaluation metrics for each algorithm
     """
     results = {}
-
     for algo_class, threshold in tqdm(algorithms, desc="Evaluating algorithms"):
         algo_name = algo_class.__name__.replace("PitchAlgorithm", "")
         algo = algo_class(
@@ -218,7 +217,12 @@ def evaluate_pitch_algorithms(
             fmax=fmax,
         )
 
-        per_file_metrics = []
+        # Global accumulators for all predictions and ground truth
+        all_pred_voicing = []
+        all_true_voicing = []
+        all_pred_pitch = []
+        all_true_pitch = []
+        all_voiced_mask = []  # Combined mask for voiced regions
 
         for idx in tqdm(
             range(len(dataset)), desc=f"Processing {algo_name}", leave=False
@@ -226,11 +230,9 @@ def evaluate_pitch_algorithms(
             try:
                 sample = dataset[idx]
                 audio = sample["audio"]
-
                 # Apply noise if specified
                 if noise_class is not None:
                     audio = noise_class.mix_noise(audio).squeeze(0)
-
                 audio = audio.numpy()
                 true_pitch = sample["pitch"].numpy()
                 true_voicing = sample["periodicity"].numpy()
@@ -242,63 +244,56 @@ def evaluate_pitch_algorithms(
                     continue
 
                 pred_pitch, pred_voicing = algo(audio, threshold)
-                voicing_metrics = evaluate_voicing_detection(pred_voicing, true_voicing)
 
-                pitch_metrics = evaluate_pitch_accuracy(
-                    pred_pitch, true_pitch, pred_voicing & true_voicing
-                )
-
-                per_file_metrics.append(
-                    {
-                        "voicing_detection": voicing_metrics,
-                        "pitch_accuracy": pitch_metrics,
-                    }
-                )
+                # Accumulate all predictions and ground truth
+                all_pred_voicing.append(pred_voicing)
+                all_true_voicing.append(true_voicing)
+                all_pred_pitch.append(pred_pitch)
+                all_true_pitch.append(true_pitch)
+                all_voiced_mask.append(pred_voicing & true_voicing)
 
             except Exception as e:
                 print(f"Error processing file {idx} with {algo_name}: {str(e)}")
                 continue
 
-        # Aggregate metrics
-        voicing_detection = {
-            "mean_f1": np.nanmean(
-                [m["voicing_detection"]["f1"] for m in per_file_metrics]
-            ),
-            "std_f1": np.nanstd(
-                [m["voicing_detection"]["f1"] for m in per_file_metrics]
-            ),
-            "mean_precision": np.nanmean(
-                [m["voicing_detection"]["precision"] for m in per_file_metrics]
-            ),
-            "std_precision": np.nanstd(
-                [m["voicing_detection"]["precision"] for m in per_file_metrics]
-            ),
-            "mean_recall": np.nanmean(
-                [m["voicing_detection"]["recall"] for m in per_file_metrics]
-            ),
-            "std_recall": np.nanstd(
-                [m["voicing_detection"]["recall"] for m in per_file_metrics]
-            ),
-        }
+        # Concatenate all arrays for global evaluation
+        if all_pred_voicing:  # Check if we have any valid data
+            global_pred_voicing = np.concatenate(all_pred_voicing)
+            global_true_voicing = np.concatenate(all_true_voicing)
+            global_pred_pitch = np.concatenate(all_pred_pitch)
+            global_true_pitch = np.concatenate(all_true_pitch)
+            global_voiced_mask = np.concatenate(all_voiced_mask)
 
-        valid_pitch_metrics = [
-            m["pitch_accuracy"]
-            for m in per_file_metrics
-            if not np.isnan(m["pitch_accuracy"]["rmse"])
-        ]
+            voicing_metrics = evaluate_voicing_detection(
+                global_pred_voicing, global_true_voicing
+            )
+            pitch_metrics = evaluate_pitch_accuracy(
+                global_pred_pitch, global_true_pitch, global_voiced_mask
+            )
 
-        pitch_accuracy = {
-            key: {
-                "mean": np.nanmean([m[key] for m in valid_pitch_metrics]),
-                "std": np.nanstd([m[key] for m in valid_pitch_metrics]),
+            results[algo_name] = {
+                "voicing_detection": voicing_metrics,
+                "pitch_accuracy": pitch_metrics,
+                "num_files_processed": len(all_pred_voicing),
+                "total_frames": len(global_pred_voicing),
             }
-            for key in ["rmse", "cents_error", "rpa", "rca"]
-        }
-
-        results[algo_name] = {
-            "voicing_detection": voicing_detection,
-            "pitch_accuracy": pitch_accuracy,
-        }
+        else:
+            # Handle case where no valid files were processed
+            results[algo_name] = {
+                "voicing_detection": {
+                    "f1": np.nan,
+                    "precision": np.nan,
+                    "recall": np.nan,
+                },
+                "pitch_accuracy": {
+                    "rmse": np.nan,
+                    "cents_error": np.nan,
+                    "rpa": np.nan,
+                    "rca": np.nan,
+                },
+                "num_files_processed": 0,
+                "total_frames": 0,
+            }
 
     return results
 
@@ -307,12 +302,12 @@ def print_evaluation_results(metrics: Dict):
     print("\nPitch Detection Evaluation Results")
     print("=" * 120)
 
-    def format_metric(mean: float, std: float, percentage: bool = False) -> str:
-        if np.isnan(mean) or np.isnan(std):
-            return "N/A"
+    def format_metric(value: float, percentage: bool = False) -> str:
+        if np.isnan(value):
+            return "N/A".center(16)
         if percentage:
-            return f"{mean * 100:>6.1f} ± {std * 100:<4.1f}%"
-        return f"{mean:>6.2f} ± {std:<4.2f}"
+            return f"{value * 100:.1f}%".center(16)
+        return f"{value:.2f}".center(16)
 
     sections = [
         (
@@ -321,25 +316,19 @@ def print_evaluation_results(metrics: Dict):
                 (
                     "Precision ↑",
                     lambda m: format_metric(
-                        m["voicing_detection"]["mean_precision"],
-                        m["voicing_detection"]["std_precision"],
-                        percentage=True,
+                        m["voicing_detection"]["precision"], percentage=True
                     ),
                 ),
                 (
                     "Recall ↑",
                     lambda m: format_metric(
-                        m["voicing_detection"]["mean_recall"],
-                        m["voicing_detection"]["std_recall"],
-                        percentage=True,
+                        m["voicing_detection"]["recall"], percentage=True
                     ),
                 ),
                 (
                     "F1 ↑",
                     lambda m: format_metric(
-                        m["voicing_detection"]["mean_f1"],
-                        m["voicing_detection"]["std_f1"],
-                        percentage=True,
+                        m["voicing_detection"]["f1"], percentage=True
                     ),
                 ),
             ],
@@ -347,34 +336,21 @@ def print_evaluation_results(metrics: Dict):
         (
             "Pitch Accuracy Performance",
             [
+                ("RMSE (Hz) ↓", lambda m: format_metric(m["pitch_accuracy"]["rmse"])),
                 (
-                    "RMSE (Hz) ↓",
-                    lambda m: format_metric(
-                        m["pitch_accuracy"]["rmse"]["mean"],
-                        m["pitch_accuracy"]["rmse"]["std"],
-                    ),
-                ),
-                (
-                    "Cents Error (Δ¢) ↓",
-                    lambda m: format_metric(
-                        m["pitch_accuracy"]["cents_error"]["mean"],
-                        m["pitch_accuracy"]["cents_error"]["std"],
-                    ),
+                    "Cents Err (Δ¢) ↓",
+                    lambda m: format_metric(m["pitch_accuracy"]["cents_error"]),
                 ),
                 (
                     "RPA ↑",
                     lambda m: format_metric(
-                        m["pitch_accuracy"]["rpa"]["mean"],
-                        m["pitch_accuracy"]["rpa"]["std"],
-                        percentage=True,
+                        m["pitch_accuracy"]["rpa"], percentage=True
                     ),
                 ),
                 (
                     "RCA ↑",
                     lambda m: format_metric(
-                        m["pitch_accuracy"]["rca"]["mean"],
-                        m["pitch_accuracy"]["rca"]["std"],
-                        percentage=True,
+                        m["pitch_accuracy"]["rca"], percentage=True
                     ),
                 ),
             ],
@@ -385,8 +361,7 @@ def print_evaluation_results(metrics: Dict):
                 (
                     "Harmonic Mean ↑",
                     lambda m: format_metric(
-                        *calculate_combined_score(m),
-                        percentage=True,
+                        calculate_combined_score(m), percentage=True
                     ),
                 ),
             ],
@@ -394,21 +369,37 @@ def print_evaluation_results(metrics: Dict):
     ]
 
     for section_name, metrics_info in sections:
+        n_metrics = len(metrics_info)
+        # Calculate table width: 20 (alg) + 16 per metric + (n_metrics) spaces
+        table_width = 20 + 16 * n_metrics + n_metrics
+
         print(f"\n{section_name}:")
-        print("-" * 120)
+        print("-" * table_width)
 
-        headers = ["Algorithm"] + [name for name, _ in metrics_info]
-        header_format = "{:<20} " + " ".join("{:>16}" for _ in headers[1:])
-        print(header_format.format(*headers))
-        print("-" * 120)
+        # Prepare headers with truncation
+        headers = ["Algorithm"] + [
+            name[:16] for name, _ in metrics_info
+        ]  # Truncate long headers
 
+        # Create format string (all columns centered)
+        format_str = "{:^20} " + " ".join(["{:^16}"] * n_metrics)
+        print(format_str.format(*headers))
+        print("-" * table_width)
+
+        # Process each algorithm
         for algo_name, algo_metrics in metrics.items():
-            values = [func(algo_metrics) for _, func in metrics_info]
-            row_format = "{:<20} " + " ".join("{:>16}" for _ in values)
-            print(row_format.format(algo_name, *values))
+            algo_display = algo_name[:20]  # Truncate long algorithm names
+
+            try:
+                values = [func(algo_metrics) for _, func in metrics_info]
+                print(format_str.format(algo_display, *values))
+            except (KeyError, TypeError) as e:
+                error_values = ["N/A".center(16)] * len(metrics_info)
+                print(format_str.format(algo_display, *error_values))
+                print(f"  Warning: Error formatting {algo_name}: {e}")
 
 
-def calculate_combined_score(metrics_dict: Dict) -> Tuple[float, float]:
+def calculate_combined_score(metrics: Dict) -> float:
     """
     Calculate a combined performance score using the harmonic mean of multiple pitch detection metrics.
 
@@ -425,63 +416,47 @@ def calculate_combined_score(metrics_dict: Dict) -> Tuple[float, float]:
     All metrics are already in [0,1] range where 1 is best.
 
     Args:
-        metrics_dict (Dict): Dictionary containing algorithm metrics with structure:
+        metrics (Dict): A dictionary with the following structure:
             {
                 "voicing_detection": {
-                    "mean_precision": float,
-                    "std_precision": float,
-                    "mean_recall": float,
-                    "std_recall": float
+                    "precision": float,
+                    "recall": float
                 },
                 "pitch_accuracy": {
-                    "rmse": {"mean": float, "std": float},
-                    "cents_error": {"mean": float, "std": float},
-                    "rpa": {"mean": float, "std": float},
-                    "rca": {"mean": float, "std": float}
+                    "rpa": float,
+                    "rca": float
                 }
             }
 
     Returns:
-        Tuple[float, float]: A tuple containing:
-            - harmonic_mean: Combined score in range [0,1] where higher is better
-            - std: Standard deviation of the combined score from bootstrap analysis
-
-            Returns (nan, nan) if any input metric is NaN or invalid.
+        float: Harmonic mean of the selected metrics, or np.nan if any metric is missing or invalid.
     """
     EPSILON = 1e-10  # Small constant to prevent division by zero
-    means, stds = [], []
 
-    # Add voicing detection metrics
-    for metric in ["precision", "recall"]:
-        means.append(metrics_dict["voicing_detection"][f"mean_{metric}"])
-        stds.append(metrics_dict["voicing_detection"][f"std_{metric}"])
+    try:
+        # Extract the same metrics as the original function
+        values = [
+            metrics["voicing_detection"]["precision"],
+            metrics["voicing_detection"]["recall"],
+            metrics["pitch_accuracy"]["rpa"],
+            metrics["pitch_accuracy"]["rca"],
+        ]
 
-    # Add RPA and RCA
-    for metric in ["rpa", "rca"]:
-        means.append(metrics_dict["pitch_accuracy"][metric]["mean"])
-        stds.append(metrics_dict["pitch_accuracy"][metric]["std"])
+        values = np.array(values)
 
-    means, stds = np.array(means), np.array(stds)
-    if np.any(np.isnan(means)) or np.any(np.isnan(stds)):
-        return np.nan, np.nan
+        # Check for NaN values
+        if np.any(np.isnan(values)):
+            return np.nan
 
-    # Ensure no zeros in means
-    means = np.clip(means, EPSILON, 1.0)
+        # Ensure no zeros (same as original)
+        values = np.clip(values, EPSILON, 1.0)
 
-    # Calculate harmonic mean
-    harmonic_mean = len(means) / np.sum(1 / means)
+        # Calculate harmonic mean (same formula as original)
+        harmonic_mean = len(values) / np.sum(1 / values)
+        return harmonic_mean
 
-    # Bootstrap uncertainty estimation
-    n_bootstrap = 10000
-    bootstrap_means = np.zeros(n_bootstrap)
-    for i in range(n_bootstrap):
-        # Generate bootstrap samples and ensure no zeros
-        bootstrap_values = np.clip(
-            np.random.normal(means, stds, means.shape), EPSILON, 1.0
-        )
-        bootstrap_means[i] = len(means) / np.sum(1 / bootstrap_values)
-
-    return harmonic_mean, np.std(bootstrap_means)
+    except (KeyError, TypeError, ZeroDivisionError):
+        return np.nan
 
 
 if __name__ == "__main__":
