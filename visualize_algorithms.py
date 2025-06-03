@@ -3,16 +3,8 @@ import librosa
 import librosa.display
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Tuple
-from algorithms import (
-    YAAPTPitchAlgorithm,
-    PraatPitchAlgorithm,
-    TorchCREPEPitchAlgorithm,
-    SWIPEPitchAlgorithm,
-    RAPTPitchAlgorithm,
-    pYINPitchAlgorithm,
-    PENNPitchAlgorithm,
-)
+from typing import List
+from algorithms import get_algorithm, list_algorithms
 
 
 def assign_colors_and_styles(num_algorithms):
@@ -38,7 +30,6 @@ def calculate_spectrogram_params(fmin: float, fmax: float, sr: int) -> dict:
 
 def compare_pitch_algorithms(
     audio_file: str,
-    algorithms: List[Tuple[type, float]],
     selected_algorithms: List[str],
     sr: int = 22050,
     hop_size: int = 256,
@@ -54,13 +45,7 @@ def compare_pitch_algorithms(
         raise RuntimeError(f"Error loading audio file: {e}")
 
     # Filter algorithms based on selection
-    selected_algorithms = [s.lower() for s in selected_algorithms]
-    filtered_algorithms = [
-        (algo_class, threshold)
-        for algo_class, threshold in algorithms
-        if algo_class.__name__.replace("PitchAlgorithm", "").lower()
-        in selected_algorithms
-    ]
+    filtered_algorithms = [get_algorithm(algo) for algo in selected_algorithms]
 
     if not filtered_algorithms:
         raise ValueError("No valid algorithms selected.")
@@ -70,9 +55,7 @@ def compare_pitch_algorithms(
 
     # Process audio with each algorithm
     results = []
-    for (algo_class, threshold), color, linestyle in zip(
-        filtered_algorithms, colors, linestyles
-    ):
+    for algo_class, color, linestyle in zip(filtered_algorithms, colors, linestyles):
         algo_name = algo_class.__name__.replace("PitchAlgorithm", "")
         print(f"Running: {algo_name}")
 
@@ -81,9 +64,9 @@ def compare_pitch_algorithms(
                 sample_rate=sr, hop_size=hop_size, fmin=fmin, fmax=fmax
             )
 
-            pitch, periodicity = algo_instance(audio, threshold=threshold)
+            pitch, periodicity = algo_instance(audio)
 
-            results.append((algo_name, threshold, pitch, periodicity, color, linestyle))
+            results.append((algo_name, pitch, periodicity, color, linestyle))
         except Exception as e:
             print(f"Error processing {algo_name}: {e}")
             continue
@@ -119,15 +102,15 @@ def compare_pitch_algorithms(
     )
 
     # Plot pitch and periodicity
-    for algo_name, threshold, pitch, periodicity, color, linestyle in results:
-        pitch[periodicity < threshold] = np.nan
+    for algo_name, pitch, periodicity, color, linestyle in results:
+        # pitch[periodicity < threshold] = np.nan
         ax1.plot(
             times, pitch, label=algo_name, alpha=0.8, color=color, linestyle=linestyle
         )
         ax2.plot(
             times,
             periodicity,
-            label=f"{algo_name} (threshold={threshold:.2f})",
+            label=f"{algo_name}",  # (threshold={threshold:.2f})",
             alpha=0.8,
             color=color,
             linestyle=linestyle,
@@ -169,7 +152,7 @@ def main():
         "--selected_algorithms",
         nargs="+",
         type=str,
-        default=["YAAPT", "pYIN", "SWIPE", "Praat", "TorchCREPE", "RAPT", "PENN"],
+        default=list_algorithms(),
         help="List of algorithms to visualize. Separate names by spaces, e.g., 'Praat SWIPE'.",
     )
     parser.add_argument("--sr", type=int, default=22050, help="Sampling rate")
@@ -182,21 +165,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Define algorithms as a list of tuples (algorithm_class, threshold)
-
-    algorithms = [
-        (YAAPTPitchAlgorithm, 0.2),
-        (PraatPitchAlgorithm, 0.1),
-        (TorchCREPEPitchAlgorithm, 0.3),
-        (SWIPEPitchAlgorithm, 0.4),
-        (RAPTPitchAlgorithm, 0.4),
-        (pYINPitchAlgorithm, 0.1),
-        (PENNPitchAlgorithm, 0.3),
-    ]
-
     compare_pitch_algorithms(
         audio_file=args.audio_file,
-        algorithms=algorithms,
         selected_algorithms=args.selected_algorithms,
         sr=args.sr,
         fmin=args.fmin,

@@ -1,5 +1,5 @@
 from importlib import import_module
-from typing import Dict, Type, Optional
+from typing import Dict, Type, Optional, List
 from .base import PitchAlgorithm
 
 # Algorithm metadata - maps names to (module_name, class_name, required_packages)
@@ -49,9 +49,30 @@ def get_algorithm_dependencies(name: str) -> list:
     return _ALGORITHM_METADATA[name][2]
 
 
-def get_algorithm(name: str) -> Type[PitchAlgorithm]:
-    """Get algorithm class by name"""
+def get_algorithm(
+    name: str, fail_silently: bool = False
+) -> Optional[Type[PitchAlgorithm]]:
+    """Get algorithm class by name
+
+    Args:
+        name: Name of the algorithm to get
+        fail_silently: If True, returns None when algorithm is unavailable instead of raising an error
+
+    Returns:
+        The algorithm class if available, None if not available and fail_silently is True
+
+    Raises:
+        ImportError: If algorithm is not available and fail_silently is False
+        ValueError: If algorithm name is unknown
+    """
+    if name not in _ALGORITHM_METADATA:
+        if fail_silently:
+            return None
+        raise ValueError(f"Unknown algorithm: {name}")
+
     if name not in _REGISTRY:
+        if fail_silently:
+            return None
         available = list(_REGISTRY.keys())
         if name in _IMPORT_ERRORS:
             deps = get_algorithm_dependencies(name)
@@ -62,6 +83,11 @@ def get_algorithm(name: str) -> Type[PitchAlgorithm]:
             )
         raise ValueError(f"Unknown algorithm: {name}. Available: {available}")
     return _REGISTRY[name]
+
+
+def get_available_algorithms() -> List[str]:
+    """Get list of available algorithm names"""
+    return list(_REGISTRY.keys())
 
 
 def register_algorithm(name: str, algorithm_class: Type[PitchAlgorithm]):
