@@ -163,4 +163,4 @@ class ThresholdPitchAlgorithm(PitchAlgorithm):
         pitch, periodicity = self._extract_pitch_with_threshold(audio, threshold)
         pitch, periodicity = self._sanity_check(pitch, periodicity)
         pitch, periodicity = self._resample(pitch, periodicity, len(audio))
-        return pitch, periodicity
+        return pitch, periodicity.astype(bool)

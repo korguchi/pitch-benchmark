@@ -1,13 +1,133 @@
 import numpy as np
 import argparse
 import random
-from typing import List, Dict, Tuple
+import os
+import glob
+from typing import List, Dict, Tuple, Optional
 from tqdm import tqdm
 from torch.utils.data import Dataset, Subset
 import torch
+import torchaudio
 from algorithms import get_algorithm, list_algorithms
 from datasets import get_dataset, list_datasets
-from noise import ESC50Noise, WhiteNoise
+
+
+class NoiseGenerator:
+    """Handles white noise and background audio noise generation."""
+
+    def __init__(
+        self,
+        noise_type: str,
+        snr_db: float,
+        sample_rate: int,
+        noise_dir: Optional[str] = None,
+    ):
+        """
+        Initialize noise generator.
+
+        Args:
+            noise_type: Either 'white' or 'background'
+            snr_db: Signal-to-noise ratio in dB
+            sample_rate: Target sample rate
+            noise_dir: Directory containing background audio files (required for 'background' type)
+        """
+        self.noise_type = noise_type
+        self.snr_db = snr_db
+        self.sample_rate = sample_rate
+        self.noise_files = []
+
+        if noise_type == "background":
+            if not noise_dir or not os.path.exists(noise_dir):
+                raise ValueError(f"Invalid noise directory: {noise_dir}")
+
+            # Find all audio files in the directory
+            audio_extensions = ["*.wav", "*.mp3", "*.flac", "*.m4a", "*.ogg"]
+            for ext in audio_extensions:
+                self.noise_files.extend(
+                    glob.glob(os.path.join(noise_dir, "**", ext), recursive=True)
+                )
+
+            if not self.noise_files:
+                raise ValueError(f"No audio files found in {noise_dir}")
+
+            print(f"Found {len(self.noise_files)} noise files in {noise_dir}")
+
+    def add_noise(self, audio: torch.Tensor) -> torch.Tensor:
+        """
+        Add noise to the input audio signal.
+
+        Args:
+            audio: Input audio tensor of shape (1, T) or (T,)
+
+        Returns:
+            Noisy audio tensor with the same shape as input
+        """
+        if audio.dim() == 1:
+            audio = audio.unsqueeze(0)
+
+        original_shape = audio.shape
+        audio_length = audio.shape[-1]
+
+        if self.noise_type == "white":
+            noise = self._generate_white_noise(audio_length)
+        elif self.noise_type == "background":
+            noise = self._generate_background_noise(audio_length)
+        else:
+            raise ValueError(f"Unknown noise type: {self.noise_type}")
+
+        # Calculate signal and noise power
+        signal_power = torch.mean(audio**2)
+        noise_power = torch.mean(noise**2)
+
+        # Calculate scaling factor for desired SNR
+        snr_linear = 10 ** (self.snr_db / 10)
+        noise_scale = torch.sqrt(signal_power / (snr_linear * noise_power))
+
+        # Add scaled noise to signal
+        noisy_audio = audio + noise_scale * noise
+
+        # Return in original shape
+        if len(original_shape) == 1:
+            return noisy_audio.squeeze(0)
+        return noisy_audio
+
+    def _generate_white_noise(self, length: int) -> torch.Tensor:
+        """Generate white Gaussian noise."""
+        return torch.randn(1, length)
+
+    def _generate_background_noise(self, length: int) -> torch.Tensor:
+        """Generate noise from random background audio file."""
+        # Randomly select a noise file
+        noise_file = random.choice(self.noise_files)
+
+        try:
+            # Load the noise file
+            noise_audio, noise_sr = torchaudio.load(noise_file)
+
+            # Resample if necessary
+            if noise_sr != self.sample_rate:
+                resampler = torchaudio.transforms.Resample(noise_sr, self.sample_rate)
+                noise_audio = resampler(noise_audio)
+
+            # Convert to mono if stereo
+            if noise_audio.shape[0] > 1:
+                noise_audio = torch.mean(noise_audio, dim=0, keepdim=True)
+
+            # Handle length mismatch
+            if noise_audio.shape[-1] < length:
+                # Repeat the noise if it's shorter than needed
+                repeats = (length // noise_audio.shape[-1]) + 1
+                noise_audio = noise_audio.repeat(1, repeats)
+
+            # Crop to desired length
+            noise_audio = noise_audio[:, :length]
+
+            return noise_audio
+
+        except Exception as e:
+            print(f"Warning: Could not load noise file {noise_file}: {e}")
+            # Fall back to white noise
+            return self._generate_white_noise(length)
 
 
 def optimize_thresholds(
@@ -184,7 +304,11 @@ def evaluate_pitch_accuracy(
 
 
 def evaluate_pitch_algorithms(
-    dataset: Dataset, fmin: int, fmax: int, algorithms: List[Tuple], noise_class
+    dataset: Dataset,
+    fmin: int,
+    fmax: int,
+    algorithms: List[Tuple],
+    noise_generator: Optional[NoiseGenerator],
 ) -> Dict:
     """
     Evaluate multiple pitch detection algorithms with comprehensive metrics.
@@ -194,7 +318,7 @@ def evaluate_pitch_algorithms(
         fmin: Minimum frequency in Hz
         fmax: Maximum frequency in Hz
         algorithms: List of tuples (algorithm_class, threshold)
-        noise_class: Noise class
+        noise_generator: NoiseGenerator instance or None
 
     Returns:
         Dictionary containing comprehensive evaluation metrics for each algorithm
@@ -222,9 +346,13 @@ def evaluate_pitch_algorithms(
             try:
                 sample = dataset[idx]
                 audio = sample["audio"]
+
                 # Apply noise if specified
-                if noise_class is not None:
-                    audio = noise_class.mix_noise(audio).squeeze(0)
+                if noise_generator is not None:
+                    audio = noise_generator.add_noise(audio)
+                    if audio.dim() > 1:
+                        audio = audio.squeeze(0)
+
                 audio = audio.numpy()
                 true_pitch = sample["pitch"].numpy()
                 true_voicing = sample["periodicity"].numpy()
@@ -482,7 +610,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--noise-type",
         type=str,
-        choices=["white", "esc50"],
+        choices=["white", "background"],
         help="Type of noise to apply. If not specified, no noise is applied",
     )
     parser.add_argument(
@@ -492,9 +620,9 @@ if __name__ == "__main__":
         help="Signal-to-Noise Ratio in dB for noise addition",
     )
     parser.add_argument(
-        "--esc50-dir",
+        "--noise-dir",
         type=str,
-        help="Path to ESC-50 dataset (required if noise-type is esc50)",
+        help="Path to directory containing background audio files (required if noise-type is background)",
     )
     parser.add_argument(
         "--sample-rate", type=int, default=22050, help="Audio sample rate in Hz"
@@ -518,9 +646,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Validate ESC50 directory if ESC50 noise is selected
-    if args.noise_type == "esc50" and not args.esc50_dir:
-        parser.error("--esc50-dir is required when using esc50 noise")
+    # Validate noise directory if background noise is selected
+    if args.noise_type == "background" and not args.noise_dir:
+        parser.error("--noise-dir is required when using background noise")
 
     # Set random seeds
     random.seed(args.seed)
@@ -559,26 +687,28 @@ if __name__ == "__main__":
     ]
 
     # Set up noise configuration
-    noise = None
-    if args.noise_type == "white":
-        noise = WhiteNoise(snr_range=[args.snr, args.snr])
-    elif args.noise_type == "esc50":
-        noise = ESC50Noise(
-            data_dir=args.esc50_dir,
-            snr_range=[args.snr, args.snr],
-            target_sample_rate=args.sample_rate,
+    noise_generator = None
+    if args.noise_type:
+        noise_generator = NoiseGenerator(
+            noise_type=args.noise_type,
+            snr_db=args.snr,
+            sample_rate=args.sample_rate,
+            noise_dir=args.noise_dir,
         )
 
     # Run evaluation
-    print(
-        f"\nTesting with{' ' + args.noise_type if args.noise_type else 'out'} noise"
-        + (f" (SNR: {args.snr}dB)" if args.noise_type else "")
-    )
+    noise_desc = ""
+    if args.noise_type:
+        noise_desc = f" with {args.noise_type} noise (SNR: {args.snr}dB)"
+    else:
+        noise_desc = " without noise"
+
+    print(f"\nTesting{noise_desc}")
     metrics = evaluate_pitch_algorithms(
         fmin=args.fmin,
         fmax=args.fmax,
         dataset=dataset,
         algorithms=optimized_algorithms,
-        noise_class=noise,
+        noise_generator=noise_generator,
     )
     print_evaluation_results(metrics)
