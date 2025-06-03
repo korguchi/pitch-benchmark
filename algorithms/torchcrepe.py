@@ -2,32 +2,25 @@ import numpy as np
 import torchcrepe
 import torch
 from typing import Tuple, Callable
-from .base import PitchAlgorithm
+from .base import ContinuousPitchAlgorithm
 
 
-class TorchCREPEPitchAlgorithm(PitchAlgorithm):
+class TorchCREPEPitchAlgorithm(ContinuousPitchAlgorithm):
     def __init__(
         self,
-        sample_rate: int,
-        hop_size: int,
-        fmin: float,
-        fmax: float,
         decoder: Callable = torchcrepe.decode.viterbi,
         model: str = "full",
         device: str = None,
+        **kwargs,
     ):
         """Initialize TorchCREPE pitch detector.
 
         Args:
-            sample_rate: Audio sampling rate in Hz
-            hop_size: Number of samples between successive frames
-            fmin: Minimum detectable frequency in Hz
-            fmax: Maximum detectable frequency in Hz
             decoder: Strategy for converting network output to pitch ('weighted_argmax', 'argmax' or 'viterbi')
             model: Model capacity ('tiny', or 'full')
             device: Computation device ("cpu" or "cuda")
         """
-        super().__init__(sample_rate, hop_size, fmin, fmax)
+        super().__init__(**kwargs)
         self.decoder = decoder
         self.model = model
 
@@ -41,20 +34,9 @@ class TorchCREPEPitchAlgorithm(PitchAlgorithm):
         else:
             self.device = device
 
-    def extract_pitch_and_periodicity(
-        self, audio: np.ndarray, threshold: float
+    def _extract_raw_pitch_and_periodicity(
+        self, audio: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract pitch using TorchCREPE.
-
-        Args:
-            audio: Input audio signal
-            threshold: Not used (CREPE has its own confidence measure)
-
-        Returns:
-            Tuple containing:
-                - Pitch frequencies in Hz
-                - Confidence values
-        """
         audio_tensor = torch.from_numpy(audio).to(self.device).unsqueeze(0)
 
         pitch, periodicity = torchcrepe.predict(

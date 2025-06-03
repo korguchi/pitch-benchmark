@@ -1,24 +1,13 @@
 import numpy as np
 import parselmouth
 from typing import Tuple
-from .base import PitchAlgorithm
+from .base import ContinuousPitchAlgorithm
 
 
-class PraatPitchAlgorithm(PitchAlgorithm):
-    def extract_pitch_and_periodicity(
-        self, audio: np.ndarray, threshold: float
+class PraatPitchAlgorithm(ContinuousPitchAlgorithm):
+    def _extract_raw_pitch_and_periodicity(
+        self, audio: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract pitch using Praat's algorithm.
-
-        Args:
-            audio: Input audio signal
-            threshold: Not used in Praat algorithm
-
-        Returns:
-            Tuple containing:
-                - Pitch frequencies in Hz
-                - Pitch strength values
-        """
         sound = parselmouth.Sound(audio, sampling_frequency=self.sample_rate)
         time_step = self.hop_size / self.sample_rate
 

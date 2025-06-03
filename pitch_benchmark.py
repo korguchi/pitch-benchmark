@@ -44,7 +44,7 @@ def optimize_thresholds(
     optimal_thresholds = {}
 
     for algo_class in tqdm(algorithms, desc="Optimizing thresholds"):
-        algo_name = algo_class.__name__.replace("PitchAlgorithm", "")
+        algo_name = algo_class.get_name()
         best_f1 = -1
         best_threshold = None
 
@@ -66,13 +66,13 @@ def optimize_thresholds(
                     audio = sample["audio"].numpy()
                     true_voicing = sample["periodicity"].numpy()
 
-                    _, pred_voicing = algo(audio, threshold)
+                    _, pred_voicing = algo.extract_pitch(audio, threshold)
                     metrics = evaluate_voicing_detection(pred_voicing, true_voicing)
                     f1_scores.append(metrics["f1"])
 
                 except Exception as e:
                     print(
-                        f"Error processing {algo_class.__name__} with threshold {threshold} on sample {idx}: {e}"
+                        f"Error processing {algo_class.get_name()} with threshold {threshold} on sample {idx}: {e}"
                     )
                     continue
 
@@ -201,7 +201,7 @@ def evaluate_pitch_algorithms(
     """
     results = {}
     for algo_class, threshold in tqdm(algorithms, desc="Evaluating algorithms"):
-        algo_name = algo_class.__name__.replace("PitchAlgorithm", "")
+        algo_name = algo_class.get_name()
         algo = algo_class(
             sample_rate=dataset.sample_rate,
             hop_size=dataset.hop_size,
@@ -235,7 +235,7 @@ def evaluate_pitch_algorithms(
                 if not true_voicing.any():
                     continue
 
-                pred_pitch, pred_voicing = algo(audio, threshold)
+                pred_pitch, pred_voicing = algo.extract_pitch(audio, threshold)
 
                 # Accumulate all predictions and ground truth
                 all_pred_voicing.append(pred_voicing)
@@ -553,7 +553,7 @@ if __name__ == "__main__":
     optimized_algorithms = [
         (
             algo_class,
-            optimal_thresholds[algo_class.__name__.replace("PitchAlgorithm", "")],
+            optimal_thresholds[algo_class.get_name()],
         )
         for algo_class in algorithms
     ]

@@ -1,24 +1,13 @@
 import numpy as np
 from pysptk import sptk
 from typing import Tuple
-from .base import PitchAlgorithm
+from .base import ThresholdPitchAlgorithm
 
 
-class RAPTPitchAlgorithm(PitchAlgorithm):
-    def extract_pitch_and_periodicity(
+class RAPTPitchAlgorithm(ThresholdPitchAlgorithm):
+    def _extract_pitch_with_threshold(
         self, audio: np.ndarray, threshold: float
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract pitch using RAPT.
-
-        Args:
-            audio: Input audio signal
-            threshold: Voice bias parameter
-
-        Returns:
-            Tuple containing:
-                - Pitch frequencies in Hz
-                - Binary voicing decisions
-        """
         audio_scaled = np.clip(audio * 32767, -32768, 32767)
         # RAPT expects a special range.
         # Map threshold from [0,1] to [-0.6,0.7]

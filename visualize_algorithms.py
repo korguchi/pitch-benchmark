@@ -3,7 +3,7 @@ import librosa
 import librosa.display
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List
+from typing import List, Optional
 from algorithms import get_algorithm, list_algorithms
 
 
@@ -35,9 +35,21 @@ def compare_pitch_algorithms(
     hop_size: int = 256,
     fmin: float = 65,
     fmax: float = 300,
+    pitch_threshold: Optional[float] = None,  # Override threshold for all algorithms
     output_file: str = "output.jpg",
 ):
-    """Compare different pitch detection algorithms."""
+    """Compare different pitch detection algorithms.
+
+    Args:
+        audio_file: Path to audio file
+        selected_algorithms: List of algorithm names
+        sr: Sample rate
+        hop_size: Hop size for analysis
+        fmin: Minimum frequency
+        fmax: Maximum frequency
+        pitch_threshold: Override threshold for all algorithms (None = use each algorithm's default)
+        output_file: Output filename
+    """
     try:
         audio, _ = librosa.load(audio_file, sr=sr)
         audio_duration = librosa.get_duration(y=audio, sr=sr)
@@ -46,7 +58,6 @@ def compare_pitch_algorithms(
 
     # Filter algorithms based on selection
     filtered_algorithms = [get_algorithm(algo) for algo in selected_algorithms]
-
     if not filtered_algorithms:
         raise ValueError("No valid algorithms selected.")
 
@@ -56,17 +67,29 @@ def compare_pitch_algorithms(
     # Process audio with each algorithm
     results = []
     for algo_class, color, linestyle in zip(filtered_algorithms, colors, linestyles):
-        algo_name = algo_class.__name__.replace("PitchAlgorithm", "")
+        algo_name = algo_class.get_name()
         print(f"Running: {algo_name}")
-
         try:
             algo_instance = algo_class(
                 sample_rate=sr, hop_size=hop_size, fmin=fmin, fmax=fmax
             )
 
-            pitch, periodicity = algo_instance(audio)
+            # Get the threshold to use
+            if pitch_threshold is not None:
+                threshold = pitch_threshold  # Use override
+            else:
+                threshold = (
+                    algo_instance._get_default_threshold()
+                )  # Use algorithm's default
 
-            results.append((algo_name, pitch, periodicity, color, linestyle))
+            if algo_instance.supports_continuous_periodicity:
+                pitch, periodicity = algo_instance.extract_continuous_periodicity(audio)
+            else:
+                pitch, periodicity = algo_instance.extract_pitch(
+                    audio, threshold=threshold
+                )
+
+            results.append((algo_name, pitch, periodicity, threshold, color, linestyle))
         except Exception as e:
             print(f"Error processing {algo_name}: {e}")
             continue
@@ -87,7 +110,6 @@ def compare_pitch_algorithms(
     spec_params = calculate_spectrogram_params(fmin, fmax, sr)
     S = librosa.feature.melspectrogram(y=audio, sr=sr, **spec_params)
     spectrogram = librosa.power_to_db(S, ref=np.max)
-
     librosa.display.specshow(
         spectrogram,
         sr=sr,
@@ -102,15 +124,23 @@ def compare_pitch_algorithms(
     )
 
     # Plot pitch and periodicity
-    for algo_name, pitch, periodicity, color, linestyle in results:
-        # pitch[periodicity < threshold] = np.nan
+    for algo_name, pitch, periodicity, threshold, color, linestyle in results:
+        # Apply threshold to pitch for display
+        pitch_display = pitch.copy()
+        pitch_display[periodicity < threshold] = np.nan
+
         ax1.plot(
-            times, pitch, label=algo_name, alpha=0.8, color=color, linestyle=linestyle
+            times,
+            pitch_display,
+            label=algo_name,
+            alpha=0.8,
+            color=color,
+            linestyle=linestyle,
         )
         ax2.plot(
             times,
             periodicity,
-            label=f"{algo_name}",  # (threshold={threshold:.2f})",
+            label=f"{algo_name} (threshold={threshold:.2f})",
             alpha=0.8,
             color=color,
             linestyle=linestyle,
@@ -123,7 +153,6 @@ def compare_pitch_algorithms(
     ax1.legend(loc="upper right")
     ax1.grid(True)
     ax1.set_xlim(0, audio_duration)
-
     yticks = np.linspace(fmin, fmax, 10)
     ax1.set_yticks(yticks)
     ax1.set_yticklabels([f"{y:.1f}" for y in yticks])

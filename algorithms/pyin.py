@@ -1,24 +1,13 @@
 import numpy as np
 import librosa
 from typing import Tuple
-from .base import PitchAlgorithm
+from .base import ContinuousPitchAlgorithm
 
 
-class pYINPitchAlgorithm(PitchAlgorithm):
-    def extract_pitch_and_periodicity(
-        self, audio: np.ndarray, threshold: float
+class pYINPitchAlgorithm(ContinuousPitchAlgorithm):
+    def _extract_raw_pitch_and_periodicity(
+        self, audio: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract pitch using pYIN.
-
-        Args:
-            audio: Input audio signal
-            threshold: Not used (pYIN has its own probability measure)
-
-        Returns:
-            Tuple containing:
-                - Pitch frequencies in Hz
-                - Combined voicing/probability flags
-        """
         pitch, voiced_flag, prob_flag = librosa.pyin(
             audio,
             fmin=self.fmin,
