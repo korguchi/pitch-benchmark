@@ -12,6 +12,7 @@ _ALGORITHM_METADATA = {
     "TorchCREPE": ("torchcrepe", "TorchCREPEPitchAlgorithm", ["torchcrepe", "torch"]),
     "YAAPT": ("yaapt", "YAAPTPitchAlgorithm", ["AMFM-decompy"]),
     "pYIN": ("pyin", "pYINPitchAlgorithm", ["librosa"]),
+    "BasicPitch": ("basicpitch", "BasicPitchPitchAlgorithm", ["basic-pitch"]),
 }
 
 __all__ = ["PitchAlgorithm", "get_algorithm", "register_algorithm", "list_algorithms"]

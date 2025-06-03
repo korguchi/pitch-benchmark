@@ -131,7 +131,7 @@ class PitchAlgorithm(ABC):
 
         Returns:
             Tuple containing:
-                - Pitch values (Hz) with unvoiced frames set to 0
+                - Pitch values (Hz)
                 - Binary voicing decisions
 
         Raises:
@@ -148,4 +148,4 @@ class PitchAlgorithm(ABC):
         pitch, periodicity = self.sanity_check(pitch, periodicity)
         pitch, periodicity = self.resample(pitch, periodicity, len(audio))
         voicing = periodicity >= threshold
-        return pitch * voicing, voicing
+        return pitch, voicing
