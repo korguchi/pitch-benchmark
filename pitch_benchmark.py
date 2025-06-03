@@ -5,7 +5,7 @@ from typing import List, Dict, Tuple
 from tqdm import tqdm
 from torch.utils.data import Dataset, Subset
 import torch
-from algorithms import get_algorithm
+from algorithms import get_algorithm, list_algorithms
 from datasets import get_dataset, list_datasets
 from noise import ESC50Noise, WhiteNoise
 
@@ -440,10 +440,10 @@ def calculate_combined_score(metrics: Dict) -> float:
         if np.any(np.isnan(values)):
             return np.nan
 
-        # Ensure no zeros (same as original)
+        # Ensure no zeros
         values = np.clip(values, EPSILON, 1.0)
 
-        # Calculate harmonic mean (same formula as original)
+        # Calculate harmonic mean
         harmonic_mean = len(values) / np.sum(1 / values)
         return harmonic_mean
 
@@ -473,8 +473,8 @@ if __name__ == "__main__":
         "--algorithms",
         type=str,
         nargs="+",
-        default=["YAAPT", "Praat", "SWIPE", "RAPT", "pYIN", "CREPE", "PENN"],
-        choices=["YAAPT", "Praat", "SWIPE", "RAPT", "pYIN", "CREPE", "PENN"],
+        default=list_algorithms(),
+        choices=list_algorithms(),
         help="List of pitch detection algorithms to evaluate",
     )
 
