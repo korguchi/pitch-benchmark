@@ -39,7 +39,7 @@ Praat emerges as the best choice for pitch detection, offering high pitch accura
 ### Installation
 
 ```bash
-pip install torchcrepe crepe praat-parselmouth pysptk librosa penn==0.0.14 AMFM-decompy pandas basic-pitch
+pip install -r requirements.txt
 ```
 
 ### Basic Usage
@@ -66,6 +66,7 @@ python pitch_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
   - [NSynth](https://magenta.tensorflow.org/datasets/nsynth)
   - [MDB-stem-synth](https://zenodo.org/records/1481172)
 - Performance benchmarking for CPU and GPU execution
+- Testing under noisy conditions: [CHiME-Home dataset](https://archive.org/details/chime-home)
 - Visualization tools for algorithm comparison
 - Implementation of popular pitch detection algorithms:
   - [YAAPT](https://bjbschmitt.github.io/AMFM_decompy/pYAAPT.html) (pYAAPT implementation)

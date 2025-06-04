@@ -13,48 +13,69 @@ from datasets import get_dataset, list_datasets
 
 
 class NoiseGenerator:
-    """Handles white noise and background audio noise generation."""
+    """Handles background audio noise generation using CHiME-Home dataset."""
 
     def __init__(
         self,
-        noise_type: str,
+        chime_home_dir: str,
         snr_db: float,
-        sample_rate: int,
-        noise_dir: Optional[str] = None,
+        target_sample_rate: int,
+        chime_sample_rate: int = 16000,
+        enable_caching: bool = True,
     ):
         """
-        Initialize noise generator.
+        Initialize noise generator for CHiME-Home dataset.
 
         Args:
-            noise_type: Either 'white' or 'background'
+            chime_home_dir: Path to CHiME-Home dataset directory
             snr_db: Signal-to-noise ratio in dB
-            sample_rate: Target sample rate
-            noise_dir: Directory containing background audio files (required for 'background' type)
+            target_sample_rate: Target sample rate for output audio
+            chime_sample_rate: Which CHiME audio files to use (16000 or 48000)
+            enable_caching: Whether to cache loaded audio files in memory
         """
-        self.noise_type = noise_type
+        self.chime_home_dir = chime_home_dir
         self.snr_db = snr_db
-        self.sample_rate = sample_rate
-        self.noise_files = []
+        self.target_sample_rate = target_sample_rate
+        self.chime_sample_rate = chime_sample_rate
+        self.enable_caching = enable_caching
 
-        if noise_type == "background":
-            if not noise_dir or not os.path.exists(noise_dir):
-                raise ValueError(f"Invalid noise directory: {noise_dir}")
+        # Audio cache
+        self.audio_cache: Dict[str, torch.Tensor] = {}
 
-            # Find all audio files in the directory
-            audio_extensions = ["*.wav", "*.mp3", "*.flac", "*.m4a", "*.ogg"]
-            for ext in audio_extensions:
-                self.noise_files.extend(
-                    glob.glob(os.path.join(noise_dir, "**", ext), recursive=True)
-                )
+        # Validate paths
+        if not os.path.exists(chime_home_dir):
+            raise ValueError(f"CHiME-Home directory not found: {chime_home_dir}")
 
-            if not self.noise_files:
-                raise ValueError(f"No audio files found in {noise_dir}")
+        chunks_dir = os.path.join(chime_home_dir, "chunks")
+        if not os.path.exists(chunks_dir):
+            raise ValueError(f"Chunks directory not found: {chunks_dir}")
 
-            print(f"Found {len(self.noise_files)} noise files in {noise_dir}")
+        # Determine audio file suffix based on CHiME sample rate
+        if chime_sample_rate == 16000:
+            self.audio_suffix = ".16kHz.wav"
+        elif chime_sample_rate == 48000:
+            self.audio_suffix = ".48kHz.wav"
+        else:
+            raise ValueError(
+                f"Unsupported CHiME sample rate: {chime_sample_rate}. Use 16000 or 48000."
+            )
+
+        # Find all audio files with the specified suffix
+        pattern = os.path.join(chunks_dir, f"*{self.audio_suffix}")
+        self.audio_files = glob.glob(pattern)
+
+        if not self.audio_files:
+            raise ValueError(
+                f"No audio files found with suffix {self.audio_suffix} in {chunks_dir}"
+            )
+
+        print(
+            f"NoiseGenerator initialized with {len(self.audio_files)} CHiME-Home audio files"
+        )
 
     def add_noise(self, audio: torch.Tensor) -> torch.Tensor:
         """
-        Add noise to the input audio signal.
+        Add CHiME-Home background noise to the input audio signal.
 
         Args:
             audio: Input audio tensor of shape (1, T) or (T,)
@@ -68,16 +89,19 @@ class NoiseGenerator:
         original_shape = audio.shape
         audio_length = audio.shape[-1]
 
-        if self.noise_type == "white":
-            noise = self._generate_white_noise(audio_length)
-        elif self.noise_type == "background":
-            noise = self._generate_background_noise(audio_length)
-        else:
-            raise ValueError(f"Unknown noise type: {self.noise_type}")
+        # Generate background noise from CHiME-Home
+        noise = self._generate_chime_noise(audio_length)
 
         # Calculate signal and noise power
         signal_power = torch.mean(audio**2)
         noise_power = torch.mean(noise**2)
+
+        # Avoid division by zero
+        if noise_power == 0:
+            warnings.warn("Generated noise has zero power, returning original audio")
+            if len(original_shape) == 1:
+                return audio.squeeze(0)
+            return audio
 
         # Calculate scaling factor for desired SNR
         snr_linear = 10 ** (self.snr_db / 10)
@@ -91,43 +115,55 @@ class NoiseGenerator:
             return noisy_audio.squeeze(0)
         return noisy_audio
 
-    def _generate_white_noise(self, length: int) -> torch.Tensor:
-        """Generate white Gaussian noise."""
-        return torch.randn(1, length)
+    def _generate_chime_noise(self, length: int) -> torch.Tensor:
+        """Generate noise from random CHiME-Home audio chunk."""
+        # Randomly select an audio file
+        audio_path = random.choice(self.audio_files)
+        audio_filename = os.path.basename(audio_path)
 
-    def _generate_background_noise(self, length: int) -> torch.Tensor:
-        """Generate noise from random background audio file."""
-        # Randomly select a noise file
-        noise_file = random.choice(self.noise_files)
+        # Check cache first
+        if self.enable_caching and audio_filename in self.audio_cache:
+            noise_audio = self.audio_cache[audio_filename]
+        else:
+            try:
+                noise_audio, chime_sr = torchaudio.load(audio_path)
 
-        try:
-            # Load the noise file
-            noise_audio, noise_sr = torchaudio.load(noise_file)
+                # Convert to mono if stereo (for 48kHz files)
+                if noise_audio.shape[0] > 1:
+                    noise_audio = torch.mean(noise_audio, dim=0, keepdim=True)
 
-            # Resample if necessary
-            if noise_sr != self.sample_rate:
-                resampler = torchaudio.transforms.Resample(noise_sr, self.sample_rate)
-                noise_audio = resampler(noise_audio)
+                # Resample noise to match target sample rate
+                if chime_sr != self.target_sample_rate:
+                    resampler = torchaudio.transforms.Resample(
+                        chime_sr, self.target_sample_rate
+                    )
+                    noise_audio = resampler(noise_audio)
 
-            # Convert to mono if stereo
-            if noise_audio.shape[0] > 1:
-                noise_audio = torch.mean(noise_audio, dim=0, keepdim=True)
+                # Cache the processed audio
+                if self.enable_caching:
+                    self.audio_cache[audio_filename] = noise_audio.clone()
 
-            # Handle length mismatch
-            if noise_audio.shape[-1] < length:
-                # Repeat the noise if it's shorter than needed
-                repeats = (length // noise_audio.shape[-1]) + 1
-                noise_audio = noise_audio.repeat(1, repeats)
+            except Exception as e:
+                print(f"Warning: Could not load audio file {audio_path}: {e}")
+                return torch.zeros(1, length)
 
-            # Crop to desired length
+        # Handle length mismatch
+        current_length = noise_audio.shape[-1]
+
+        if current_length < length:
+            # Repeat the noise if it's shorter than needed
+            repeats = (length // current_length) + 1
+            noise_audio = noise_audio.repeat(1, repeats)
+
+        # Crop to desired length
+        if noise_audio.shape[-1] > length:
+            # Random crop for variety
+            start_idx = random.randint(0, noise_audio.shape[-1] - length)
+            noise_audio = noise_audio[:, start_idx : start_idx + length]
+        elif noise_audio.shape[-1] < length:
             noise_audio = noise_audio[:, :length]
 
-            return noise_audio
-
-        except Exception as e:
-            print(f"Warning: Could not load noise file {noise_file}: {e}")
-            # Fall back to white noise
-            return self._generate_white_noise(length)
+        return noise_audio
 
 
 def optimize_thresholds(
@@ -136,6 +172,7 @@ def optimize_thresholds(
     fmin: int,
     fmax: int,
     algorithms: List,
+    noise_generator: Optional[NoiseGenerator],
     threshold_range: List[float] = [0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
 ) -> Dict:
     """
@@ -183,7 +220,15 @@ def optimize_thresholds(
             for idx in range(len(validation_dataset)):
                 try:
                     sample = validation_dataset[idx]
-                    audio = sample["audio"].numpy()
+                    audio = sample["audio"]
+
+                    # Apply noise if specified
+                    if noise_generator is not None:
+                        audio = noise_generator.add_noise(audio)
+                        if audio.dim() > 1:
+                            audio = audio.squeeze(0)
+
+                    audio = audio.numpy()
                     true_voicing = sample["periodicity"].numpy()
 
                     _, pred_voicing = algo.extract_pitch(audio, threshold)
@@ -608,21 +653,15 @@ if __name__ == "__main__":
 
     # Optional arguments
     parser.add_argument(
-        "--noise-type",
+        "--noise-dir",
         type=str,
-        choices=["white", "background"],
-        help="Type of noise to apply. If not specified, no noise is applied",
+        help="Path to CHiME-Home dir containing background audio files",
     )
     parser.add_argument(
         "--snr",
         type=float,
-        default=15.0,
+        default=10.0,
         help="Signal-to-Noise Ratio in dB for noise addition",
-    )
-    parser.add_argument(
-        "--noise-dir",
-        type=str,
-        help="Path to directory containing background audio files (required if noise-type is background)",
     )
     parser.add_argument(
         "--sample-rate", type=int, default=22050, help="Audio sample rate in Hz"
@@ -646,10 +685,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Validate noise directory if background noise is selected
-    if args.noise_type == "background" and not args.noise_dir:
-        parser.error("--noise-dir is required when using background noise")
-
     # Set random seeds
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -667,6 +702,15 @@ if __name__ == "__main__":
     # Map algorithm names to classes
     algorithms = [get_algorithm(name) for name in args.algorithms]
 
+    # Set up noise configuration
+    noise_generator = None
+    if args.noise_dir:
+        noise_generator = NoiseGenerator(
+            chime_home_dir=args.noise_dir,
+            snr_db=args.snr,
+            target_sample_rate=args.sample_rate,
+        )
+
     # Find optimal thresholds
     optimal_thresholds = optimize_thresholds(
         dataset=dataset,
@@ -674,6 +718,7 @@ if __name__ == "__main__":
         fmin=args.fmin,
         fmax=args.fmax,
         algorithms=algorithms,
+        noise_generator=noise_generator,
     )
     print(f"Thresholds: {optimal_thresholds}")
 
@@ -686,20 +731,10 @@ if __name__ == "__main__":
         for algo_class in algorithms
     ]
 
-    # Set up noise configuration
-    noise_generator = None
-    if args.noise_type:
-        noise_generator = NoiseGenerator(
-            noise_type=args.noise_type,
-            snr_db=args.snr,
-            sample_rate=args.sample_rate,
-            noise_dir=args.noise_dir,
-        )
-
     # Run evaluation
     noise_desc = ""
-    if args.noise_type:
-        noise_desc = f" with {args.noise_type} noise (SNR: {args.snr}dB)"
+    if args.noise_dir:
+        noise_desc = f" with {args.noise_dir} noise (SNR: {args.snr}dB)"
     else:
         noise_desc = " without noise"
 

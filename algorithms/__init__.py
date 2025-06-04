@@ -4,7 +4,7 @@ from .base import PitchAlgorithm
 
 # Algorithm metadata - maps names to (module_name, class_name, required_packages)
 _ALGORITHM_METADATA = {
-    "CREPE": ("crepe", "CREPEPitchAlgorithm", ["crepe", "tensorflow"]),
+    # "CREPE": ("crepe", "CREPEPitchAlgorithm", ["crepe", "tensorflow"]),
     "PENN": ("penn", "PENNPitchAlgorithm", ["penn"]),
     "Praat": ("praat", "PraatPitchAlgorithm", ["praat-parselmouth"]),
     "RAPT": ("rapt", "RAPTPitchAlgorithm", ["pysptk"]),
