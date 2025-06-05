@@ -15,9 +15,9 @@
 
 ## Combined
 
-The overall performance of each algorithm is evaluated using a combined metric based on the harmonic mean of multiple key measurements. This approach was chosen specifically because:
+The overall performance of each algorithm is evaluated using a combined metric based on the harmonic mean of multiple measurements. This approach was chosen specifically because:
 
-1. **Balanced Performance Requirement**: The harmonic mean requires good performance across ALL metrics - an algorithm must perform well in both voicing detection and pitch accuracy to achieve a high score.
+1. **Balanced Performance Requirement**: The harmonic mean requires good performance across ALL metrics: an algorithm must perform well in both voicing detection and pitch accuracy to achieve a high score.
 
 2. **Penalty for Poor Performance**: Poor performance in any single metric significantly impacts the final score, preventing algorithms from achieving high overall scores through excellence in just one area.
 
@@ -30,121 +30,141 @@ The combined metric incorporates four key measurements, all normalized to the ra
 # NSynth (test split)
 
 ```bash
-python pitch_benchmark.py --dataset NSynth --data-dir nsynth-test --fmin 65 --fmax 2093
+python pitch_benchmark.py --dataset NSynth --data-dir nsynth-test --fmin 65 --fmax 2093 --snr 10 --noise-dir "chime_home"
 ```
 
 ## Voicing Detection
 
-| Algorithm  | Precision ↑  | Recall ↑          | F1 ↑         |
-| ---------- | ------------ | ----------------- | ------------ |
-| YAAPT      | 92.1 ± 14.8% | 86.3 ± 26.5%      | 84.9 ± 23.2% |
-| Praat      | **99.9 ± 0.6 %** | 71.4 ± 33.5%      | 77.2 ± 31.8% |
-| SWIPE      | 78.2 ± 26.7% | 76.8 ± 37.2%      | 72.6 ± 34.0% |
-| RAPT       | 94.6 ± 9.0 % | 84.7 ± 31.5%      | 84.0 ± 28.7% |
-| pYIN       | 83.6 ± 18.6% | 98.0 ± 11.2%      | **88.3 ± 16.2%** |
-| TorchCREPE | 73.2 ± 35.3% | 66.0 ± 45.9%      | 62.2 ± 43.0% |
-| PENN       | 70.2 ± 24.0% | **100.0 ± 0.0 %** | 79.4 ± 22.0% |
+| Algorithm  | Precision ↑ | Recall ↑   | F1 ↑      |
+| ---------- | ----------- | ---------- | --------- |
+| PENN       | 71.7%       | **100.0%** | 83.5%     |
+| Praat      | 87.7%       | 74.3%      | 80.5%     |
+| RAPT       | 80.3%       | 83.3%      | 81.8%     |
+| SWIPE      | 71.4%       | 88.6%      | 79.1%     |
+| TorchCREPE | **93.4%**   | 48.7%      | 64.0%     |
+| YAAPT      | 91.8%       | 78.2%      | 84.4%     |
+| pYIN       | 74.0%       | 98.9%      | **84.7%** |
+| BasicPitch | 71.7%       | **100.0%** | 83.5%     |
 
 ## Pitch Accuracy
 
-| Algorithm  | RMSE (Hz) ↓         | Cents Error (Δ¢) ↓   | RPA ↑            | RCA ↑            |
-| ---------- | ------------------- | -------------------- | ---------------- | ---------------- |
-| YAAPT      | 481.97 ± 843.07     | 1607.24 ± 1903.65    | 35.8 ± 45.7%     | 61.7 ± 43.5%     |
-| Praat      | **205.85 ± 525.38** | **499.35 ± 1030.27** | **71.4 ± 43.3%** | **88.7 ± 27.7%** |
-| SWIPE      | 331.30 ± 656.28     | 993.88 ± 1379.31     | 50.4 ± 47.2%     | 65.6 ± 42.9%     |
-| RAPT       | 405.91 ± 835.13     | 1150.29 ± 1749.96    | 57.3 ± 46.8%     | 67.9 ± 41.0%     |
-| pYIN       | 219.08 ± 583.29     | 564.86 ± 1150.01     | 67.0 ± 44.6%     | 81.2 ± 34.7%     |
-| TorchCREPE | 165.49 ± 457.58     | 310.54 ± 1074.70     | 83.8 ± 36.3%     | 89.3 ± 30.3%     |
-| PENN       | 366.39 ± 747.75     | 976.37 ± 1395.49     | 55.6 ± 45.5%     | 69.0 ± 39.4%     |
-
-Note: TorchCREPE was trained on the NSynth dataset.
+| Algorithm  | RMSE (Hz) ↓ | Cents Error (Δ¢) ↓ | RPA ↑     | RCA ↑     |
+| ---------- | ----------- | ------------------ | --------- | --------- |
+| PENN       | 483.76      | 1364.99            | 35.7%     | 49.8%     |
+| Praat      | 364.75      | 580.77             | 71.9%     | 84.4%     |
+| RAPT       | 373.19      | 720.48             | 58.6%     | 70.8%     |
+| SWIPE      | 398.53      | 916.74             | 48.9%     | 59.5%     |
+| TorchCREPE | **192.30**  | **101.93**         | **93.5%** | **97.7%** |
+| YAAPT      | 440.75      | 1045.09            | 40.9%     | 69.3%     |
+| pYIN       | 295.70      | 648.25             | 59.6%     | 70.1%     |
+| BasicPitch | 278.20      | 660.44             | 68.2%     | 81.5%     |
 
 ## Overall
 
-| Algorithm  | Harmonic Mean ↑  |
-| ---------- | ---------------- |
-| YAAPT      | 60.1 ± 31.9%     |
-| Praat      | **81.2 ± 26.4%** |
-| SWIPE      | 65.7 ± 29.5%     |
-| RAPT       | 73.3 ± 30.7%     |
-| pYIN       | 81.0 ± 26.9%     |
-| TorchCREPE | 77.0 ± 27.7%     |
-| PENN       | 70.5 ± 29.8%     |
+| Algorithm  | Harmonic Mean ↑ |
+| ---------- | --------------- |
+| PENN       | 55.5%           |
+| Praat      | **79.0%**       |
+| RAPT       | 71.9%           |
+| SWIPE      | 63.9%           |
+| TorchCREPE | 76.7%           |
+| YAAPT      | 64.0%           |
+| pYIN       | 73.2%           |
+| BasicPitch | 78.6%           |
 
 # Pitch Tracking Database (PTDB)
 
 ```bash
-python pitch_benchmark.py --dataset PTDB --data-dir SPEECH\ DATA/ --fmin 65 --fmax 300
+python pitch_benchmark.py --dataset PTDB --data-dir "SPEECH DATA" --fmin 65 --fmax 300 --snr 10 --noise-dir "chime_home"
 ```
+
+Note: PENN was trained on the PTDB dataset, but here we evaluate it on the full PTDB dataset without excluding its training samples. This causes data leakage and inflates PENN’s results. The other algorithms were not trained on PTDB, so their results are unaffected.
 
 ## Voicing Detection
 
-| Algorithm | Precision ↑ | Recall ↑ | F1 ↑ |
-|-----------|------------|-----------|-------|
-| YAAPT | **81.3 ± 11.3%** | **89.4 ± 8.0%** | **84.6 ± 8.6%** |
-| Praat | 81.1 ± 10.3% | 86.0 ± 8.8% | 82.9 ± 8.1% |
-| SWIPE | 80.9 ± 11.0% | 82.4 ± 12.8% | 80.6 ± 9.2% |
-| RAPT | 78.2 ± 10.4% | 80.2 ± 10.5% | 78.6 ± 9.0% |
-| pYIN | 80.4 ± 12.4% | 87.6 ± 13.3% | 82.7 ± 10.8% |
-| TorchCREPE | 78.4 ± 11.4% | 82.4 ± 11.7% | 79.4 ± 9.0% |
+| Algorithm    | Precision ↑ | Recall ↑ | F1 ↑ |
+|--------------|-------------|-----------|--------|
+| PENN         | 81.2%       | 85.7%     | 83.4%  |
+| Praat        | 64.6%       | 79.4%     | 71.2%  |
+| RAPT         | **74.6%**   | 72.9%     | 73.7%  |
+| SWIPE        | 67.8%       | 71.0%     | 69.3%  |
+| TorchCREPE   | 59.6%       | 80.7%     | 68.6%  |
+| YAAPT        | 69.4%       | **93.6%** | **79.7%** |
+| pYIN         | 39.8%       | 78.6%     | 52.9%  |
+| BasicPitch   | 67.9%       | 72.2%     | 70.0%  |
 
 ## Pitch Accuracy
 
-| Algorithm | RMSE (Hz) ↓ | Cents Error (Δ¢) ↓ | RPA ↑ | RCA ↑ |
-|-----------|------------|-------------------|--------|--------|
-| YAAPT | 16.93 ± 13.21 | 103.48 ± 94.63 | 73.3 ± 13.3% | 75.1 ± 13.0% |
-| Praat | **15.60 ± 14.48** | **86.76 ± 87.91** | 73.2 ± 10.9% | 74.9 ± 10.5% |
-| SWIPE | 19.84 ± 18.22 | 99.67 ± 104.20 | 77.0 ± 11.4% | 78.2 ± 10.8% |
-| RAPT | 17.57 ± 14.53 | 109.97 ± 86.87 | 58.2 ± 13.4% | 59.5 ± 13.4% |
-| pYIN | 23.52 ± 14.24 | 131.40 ± 97.35 | **79.1 ± 9.5%** | **80.3 ± 8.9%** |
-| TorchCREPE | 15.93 ± 13.96 | 89.17 ± 92.68 | 75.5 ± 11.2% | 76.9 ± 10.9% |
+| Algorithm    | RMSE (Hz) ↓ | Cents Err (Δ¢) ↓ | RPA ↑        | RCA ↑        |
+|--------------|-------------|------------------|--------------|--------------|
+| PENN         | 16.51       | 55.55            | 89.7%        | 91.1%        |
+| Praat        | 20.60       | 75.12            | 76.9%        | 78.7%        |
+| RAPT         | 24.61       | 118.70           | 62.2%        | 63.5%        |
+| SWIPE        | 28.29       | 131.11           | 73.0%        | 74.0%        |
+| TorchCREPE   | **18.54**   | **71.23**        | **77.7%**    | **79.1%**    |
+| YAAPT        | 21.65       | 105.95           | 74.8%        | 76.4%        |
+| pYIN         | 20.04       | 80.08            | 76.8%        | 77.6%        |
+| BasicPitch   | 22.19       | 101.42           | 71.7%        | 72.9%        |
 
 ## Overall
 
-| Algorithm | Harmonic Mean ↑ |
-|-----------|----------------|
-| YAAPT | 79.3 ± 6.4% |
-| Praat | 78.5 ± 5.3% |
-| SWIPE | 79.6 ± 5.8% |
-| RAPT | 67.5 ± 7.3% |
-| **pYIN** | **81.7 ± 5.5%** |
-| TorchCREPE | 78.2 ± 5.8% |
+| Algorithm    | Harmonic Mean ↑ |
+|--------------|------------------|
+| PENN         | 86.8%            |
+| Praat        | 74.4%            |
+| RAPT         | 67.9%            |
+| SWIPE        | 71.4%            |
+| TorchCREPE   | 73.2%            |
+| YAAPT        | **77.6%**        |
+| pYIN         | 62.8%            |
+| BasicPitch   | 71.1%            |
 
 # MDB-STEM-Synth
 
 ```bash
-python pitch_benchmark.py --dataset MDBStemSynth --data-dir MDB-stem-synth --fmin 65 --fmax 2093
+python pitch_benchmark.py --dataset MDBStemSynth --data-dir MDB-stem-synth --fmin 65 --fmax 2093 --snr 10 --noise-dir "chime_home"
 ```
+
+Note: As with the PTDB dataset, there may be some leakage affecting PENN's results here.
 
 ## Voicing Detection
 
-| Algorithm | Precision ↑ | Recall ↑ | F1 ↑ |
-|-----------|------------|-----------|-------|
-| YAAPT | 97.5 ± 2.9% | **96.0 ± 8.0%** | **96.5 ± 4.8%** |
-| Praat | 99.0 ± 1.5% | 88.3 ± 14.7% | 92.5 ± 10.2% |
-| SWIPE | **99.4 ± 0.7%** | 84.9 ± 19.5% | 90.2 ± 13.5% |
-| RAPT | 99.1 ± 1.1% | 92.7 ± 13.5% | 95.1 ± 9.3% |
-| pYIN | 97.0 ± 3.3% | 95.3 ± 7.6% | 96.0 ± 5.3% |
+| Algorithm  | Precision ↑ | Recall ↑  | F1 ↑      |
+| ---------- | ----------- | --------- | --------- |
+| YAAPT      | 80.0%       | **91.1%** | **85.2%** |
+| Praat      | 94.7%       | 57.9%     | 71.9%     |
+| SWIPE      | 79.4%       | 64.2%     | 71.0%     |
+| RAPT       | 93.2%       | 72.4%     | 81.5%     |
+| pYIN       | 65.8%       | 93.2%     | 77.1%     |
+| TorchCREPE | **98.8%**   | 48.6%     | 65.1%     |
+| PENN       | 97.9%       | 74.7%     | 84.8%     |
+| BasicPitch | 70.0%       | 66.6%     | 68.3%     |
 
 ## Pitch Accuracy
 
-| Algorithm | RMSE (Hz) ↓ | Cents Error (Δ¢) ↓ | RPA ↑ | RCA ↑ |
-|-----------|------------|-------------------|--------|--------|
-| YAAPT | 107.28 ± 153.99 | 392.33 ± 477.18 | 65.4 ± 26.6% | 81.0 ± 13.3% |
-| Praat | 60.14 ± 136.81 | 105.75 ± 248.92 | **88.8 ± 10.8%** | **91.7 ± 7.3%** |
-| SWIPE | 145.04 ± 185.68 | 181.01 ± 401.97 | 88.2 ± 17.7% | 89.9 ± 15.0% |
-| RAPT | **45.87 ± 84.72** | **152.39 ± 257.53** | 86.2 ± 19.6% | 89.7 ± 14.5% |
-| pYIN | 66.44 ± 169.06 | 168.22 ± 337.44 | 78.4 ± 17.7% | 82.7 ± 13.0% |
+| Algorithm  | RMSE (Hz) ↓ | Cents Error (Δ¢) ↓ | RPA ↑     | RCA ↑     |
+| ---------- | ----------- | ------------------ | --------- | --------- |
+| YAAPT      | 164.92      | 366.13             | 64.5%     | 80.2%     |
+| Praat      | 134.66      | 80.45              | 94.1%     | 96.0%     |
+| SWIPE      | 110.08      | 119.05             | 88.0%     | 89.2%     |
+| RAPT       | 95.40       | 97.72              | 89.3%     | 92.5%     |
+| pYIN       | 70.73       | 127.57             | 79.5%     | 83.6%     |
+| TorchCREPE | **24.88**   | **14.34**          | **99.1%** | **99.3%** |
+| PENN       | 28.36       | 146.70             | 84.1%     | 94.3%     |
+| BasicPitch | 86.38       | 266.40             | 43.9%     | 46.2%     |
 
 ## Overall
 
-| Algorithm | Harmonic Mean ↑ |
-|-----------|----------------|
-| YAAPT | 82.8 ± 15.5% |
-| Praat | **91.7 ± 4.9%** |
-| SWIPE | 90.3 ± 7.8% |
-| RAPT | **91.7 ± 7.0%** |
-| pYIN | 87.6 ± 7.1% |
+| Algorithm  | Harmonic Mean ↑ |
+| ---------- | --------------- |
+| PENN       | 86.8%           |
+| RAPT       | **85.9%**       |
+| Praat      | 81.8%           |
+| pYIN       | 79.3%           |
+| SWIPE      | 78.8%           |
+| TorchCREPE | 78.7%           |
+| YAAPT      | 77.7%           |
+| BasicPitch | 54.2%           |
 
 # Speed Benchmark
 
@@ -154,12 +174,15 @@ python speed_benchmark.py
 
 Processing time for 5-second audio samples (averaged over 20 runs, how much faster than baseline TorchCREPE):
 
-| Algorithm   | CPU     | CUDA   |
-|------------|---------|--------|
-| YAAPT       | 12.31x | -  |
-| Praat      | **449.43x** | -      |
-| TorchCREPE | 1.00x   | 1.00x  |
-| PENN       | 6.17x   | **5.49x**  |
-| SWIPE      | 29.08x  | -      |
-| RAPT       | 274.51x | -      |
-| pYIN       | 3.55x   | -      |
+## Runtime Performance
+
+| Algorithm   | CPU               | CUDA              |
+|-------------|------------------|-------------------|
+| PENN        | 4.59x (501.6ms)   | **5.65x (57.0ms)** |
+| Praat       | **469.16x (4.9ms)** | CPU only          |
+| RAPT        | 147.61x (15.6ms)  | CPU only          |
+| SWIPE       | 14.61x (157.6ms)  | CPU only          |
+| TorchCREPE  | 1.00x (2088.6ms)  | 1.00x (242.9ms)   |
+| YAAPT       | 7.10x (324.5ms)   | CPU only          |
+| pYIN        | 1.28x (1796.6ms)  | CPU only          |
+| BasicPitch  | 7.18x (320.8ms)   | CPU only          |

@@ -110,6 +110,11 @@ class NoiseGenerator:
         # Add scaled noise to signal
         noisy_audio = audio + noise_scale * noise
 
+        # Normalize to ensure amplitude stays within [-1, 1]
+        max_abs = torch.max(torch.abs(noisy_audio))
+        if max_abs > 1.0:
+            noisy_audio = noisy_audio / max_abs
+
         # Return in original shape
         if len(original_shape) == 1:
             return noisy_audio.squeeze(0)

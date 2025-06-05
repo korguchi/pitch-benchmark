@@ -4,35 +4,33 @@ A comprehensive benchmark suite for evaluating and comparing different pitch det
 
 ## 📊 Key Findings
 
-Praat emerges as the best choice for pitch detection, offering high pitch accuracy with the lowest cents error across all datasets while also providing unmatched computational efficiency (449x faster than baseline). While pYIN shows higher harmonic mean scores in some datasets, Praat's significantly lower pitch error and dramatic speed advantage make it the clear winner for both accuracy and practical applications. For a detailed breakdown of results, see [Benchmark Results](benchmark_results.md).
+Praat demonstrates the best overall performance, achieving the highest average harmonic-mean accuracy (78.4%) across three datasets and maintaining a 245-cent average error while processing audio faster than all the other algorithms. While TorchCREPE achieves lower pitch errors on individual datasets, it is much slower and has lower recall. For a detailed breakdown of results, see [Benchmark Results](benchmark_results.md).
+
+In the tables below, any entry marked with “†” indicates that the algorithm was trained (or partially trained) on that same dataset, so its performance on that split is inflated by data leakage and should not be directly compared to the other methods.
 
 ### Pitch accuracy (↑ higher is better)
 
-| Algorithm | NSynth | PTDB | MDB-STEM-Synth | Average |
-|-----------|---------|---------|----------------|----------|
-| YAAPT | 60.1% | 79.3% | 82.8% | 74.1% |
-| Praat | **81.2%** | 78.5% | **91.7%** | **83.8%** |
-| SWIPE | 65.7% | 79.6% | 90.3% | 78.5% |
-| RAPT | 73.3% | 67.5% | **91.7%** | 77.5% |
-| pYIN | 81.0% | **81.7%** | 87.6% | 83.4% |
-| TorchCREPE | N/A* | 78.2% | N/A* | N/A* |
-| PENN | 70.5% | N/A* | N/A* | N/A* |
-
-*N/A indicates the algorithm was excluded from testing on this dataset as it was used in training
+| Algorithm  | NSynth    | PTDB      | MDB‑STEM‑Synth | Average   |
+| ---------- | --------- | --------- | -------------- | --------- |
+| YAAPT      | 64.0%     | 77.6%     | 77.7%          | 73.1%     |
+| Praat      | **79.0%** | 74.4%     | 81.8%          | **78.4%** |
+| SWIPE      | 63.9%     | 71.4%     | 78.8%          | 71.4%     |
+| RAPT       | 71.9%     | 67.9%     | **85.9%**      | 75.2%     |
+| pYIN       | 73.2%     | 62.8%     | 79.3%          | 71.8%     |
+| TorchCREPE | 76.7%     | 73.2%     | 78.7%†         | 76.2%     |
+| PENN       | 55.5%     | 86.8%†    | 86.8%†         | 76.4%     |
 
 ### Cents Error (↓ lower is better)
 
-| Algorithm | NSynth | PTDB | MDB-STEM-Synth | Average |
-|-----------|---------|---------|----------------|----------|
-| YAAPT | 1607.24 | 103.48 | 392.33 | 701.02 |
-| Praat | **499.35** | **86.76** | **105.75** | **230.62** |
-| SWIPE | 993.88 | 99.67 | 181.01 | 424.85 |
-| RAPT | 1150.29 | 109.97 | 152.39 | 470.88 |
-| pYIN | 564.86 | 131.40 | 168.22 | 288.16 |
-| TorchCREPE | N/A* | 89.17 | N/A* | N/A* |
-| PENN | 976.37 | N/A* | N/A* | N/A* |
-
-*N/A indicates the algorithm was excluded from testing on this dataset as it was used in training
+| Algorithm   | NSynth   | PTDB    | MDB-STEM-Synth | Average  |
+|-------------|----------|---------|----------------|----------|
+| YAAPT       | 1045.09  | 105.95  | 366.13         | 505.72   |
+| Praat       | 580.77   | 75.12   | **80.45**   | **245.45**   |
+| SWIPE       | 916.74   | 131.11  | 119.05         | 388.97   |
+| RAPT        | 720.48   | 118.70  | 97.72          | 312.30   |
+| pYIN        | 648.25   | 80.08   | 127.57         | 285.30   |
+| TorchCREPE  | **101.93** | **71.23**  | 14.34†        | 62.50    |
+| PENN        | 1364.99  | 55.55† | 146.70†          | 522.41   |
 
 ## 🚀 Quick Start
 

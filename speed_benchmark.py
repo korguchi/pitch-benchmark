@@ -1,17 +1,13 @@
 import torch
 import time
 import numpy as np
+import argparse
 from typing import List, Type
 from tabulate import tabulate
-from algorithms import (
-    YAAPTPitchAlgorithm,
-    PraatPitchAlgorithm,
-    TorchCREPEPitchAlgorithm,
-    PENNPitchAlgorithm,
-    SWIPEPitchAlgorithm,
-    RAPTPitchAlgorithm,
-    pYINPitchAlgorithm,
-)
+from algorithms import get_algorithm, list_algorithms
+
+# Get available algorithms once
+AVAILABLE_ALGORITHMS = list_algorithms()
 
 
 def generate_harmonic_signal(sample_rate: int, duration: float) -> np.ndarray:
@@ -68,7 +64,7 @@ def benchmark_algorithm(
     latencies = []
     for _ in range(n_runs):
         start_time = time.time()
-        algorithm(audio_signal)
+        algorithm.extract_pitch(audio_signal)
         if device == "cuda":
             torch.cuda.synchronize()
         elapsed_time = time.time() - start_time
@@ -107,7 +103,7 @@ def run_benchmark(
 
     results = []
     for algorithm_class in algorithm_classes:
-        row = [algorithm_class.__name__.replace("PitchAlgorithm", "")]
+        row = [algorithm_class.get_name()]
 
         for device in devices:
             latency = benchmark_algorithm(
@@ -133,26 +129,62 @@ def run_benchmark(
 
     headers = ["Algorithm"] + [f"{dev.upper()}" for dev in devices]
     print("\nBenchmark Results")
-    print(f"Baseline: {baseline_algorithm.__name__.replace('PitchAlgorithm', '')}")
+    print(f"Baseline: {baseline_algorithm.get_name()}")
     print(tabulate(results, headers=headers, tablefmt="grid"))
 
 
 if __name__ == "__main__":
-    algorithms = [
-        YAAPTPitchAlgorithm,
-        PraatPitchAlgorithm,
-        TorchCREPEPitchAlgorithm,
-        PENNPitchAlgorithm,
-        SWIPEPitchAlgorithm,
-        RAPTPitchAlgorithm,
-        pYINPitchAlgorithm,
-    ]
+    parser = argparse.ArgumentParser(
+        description="Benchmark pitch detection algorithms for speed performance.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    parser.add_argument(
+        "--algorithms",
+        type=str,
+        nargs="+",
+        default=AVAILABLE_ALGORITHMS,
+        choices=AVAILABLE_ALGORITHMS,
+        help="List of pitch detection algorithms to benchmark",
+    )
+    parser.add_argument(
+        "--baseline",
+        type=str,
+        default="TorchCREPE",
+        choices=AVAILABLE_ALGORITHMS,
+        help="Baseline algorithm for relative speed comparison",
+    )
+    parser.add_argument(
+        "--sample-rate", type=int, default=22050, help="Audio sample rate in Hz"
+    )
+    parser.add_argument(
+        "--hop-length", type=int, default=256, help="Hop length in samples"
+    )
+    parser.add_argument(
+        "--signal-length",
+        type=float,
+        default=5.0,
+        help="Length of test signal in seconds",
+    )
+    parser.add_argument(
+        "--n-runs", type=int, default=20, help="Number of benchmark runs per algorithm"
+    )
+
+    args = parser.parse_args()
+
+    # Map algorithm names to classes
+    algorithms = [get_algorithm(name) for name in args.algorithms]
+    baseline_algorithm = get_algorithm(args.baseline)
+
+    print(f"Benchmarking {len(algorithms)} algorithms:")
+    for algo in algorithms:
+        print(f"  - {algo.get_name()}")
 
     run_benchmark(
         algorithm_classes=algorithms,
-        baseline_algorithm=TorchCREPEPitchAlgorithm,
-        sample_rate=22050,
-        hop_length=256,
-        signal_length_sec=5.0,
-        n_runs=20,
+        baseline_algorithm=baseline_algorithm,
+        sample_rate=args.sample_rate,
+        hop_length=args.hop_length,
+        signal_length_sec=args.signal_length,
+        n_runs=args.n_runs,
     )
