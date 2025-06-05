@@ -3,6 +3,7 @@ from .ptdb import PitchDatasetPTDB
 from .mdb import PitchDatasetMDBStemSynth
 from .nsynth import PitchDatasetNSynth
 from .speechsynth import PitchDatasetSpeechSynth
+from .transforms import NoiseAugmentedDataset, CHiMeNoiseDataset
 
 __all__ = [
     "PitchDataset",
@@ -10,6 +11,8 @@ __all__ = [
     "PitchDatasetMDBStemSynth",
     "PitchDatasetNSynth",
     "PitchDatasetSpeechSynth",
+    "NoiseAugmentedDataset",
+    "CHiMeNoiseDataset",
 ]
 
 _REGISTRY = {

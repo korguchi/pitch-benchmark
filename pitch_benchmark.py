@@ -9,166 +9,7 @@ from torch.utils.data import Dataset, Subset
 import torch
 import torchaudio
 from algorithms import get_algorithm, list_algorithms
-from datasets import get_dataset, list_datasets
-
-
-class NoiseGenerator:
-    """Handles background audio noise generation using CHiME-Home dataset."""
-
-    def __init__(
-        self,
-        chime_home_dir: str,
-        snr_db: float,
-        target_sample_rate: int,
-        chime_sample_rate: int = 16000,
-        enable_caching: bool = True,
-    ):
-        """
-        Initialize noise generator for CHiME-Home dataset.
-
-        Args:
-            chime_home_dir: Path to CHiME-Home dataset directory
-            snr_db: Signal-to-noise ratio in dB
-            target_sample_rate: Target sample rate for output audio
-            chime_sample_rate: Which CHiME audio files to use (16000 or 48000)
-            enable_caching: Whether to cache loaded audio files in memory
-        """
-        self.chime_home_dir = chime_home_dir
-        self.snr_db = snr_db
-        self.target_sample_rate = target_sample_rate
-        self.chime_sample_rate = chime_sample_rate
-        self.enable_caching = enable_caching
-
-        # Audio cache
-        self.audio_cache: Dict[str, torch.Tensor] = {}
-
-        # Validate paths
-        if not os.path.exists(chime_home_dir):
-            raise ValueError(f"CHiME-Home directory not found: {chime_home_dir}")
-
-        chunks_dir = os.path.join(chime_home_dir, "chunks")
-        if not os.path.exists(chunks_dir):
-            raise ValueError(f"Chunks directory not found: {chunks_dir}")
-
-        # Determine audio file suffix based on CHiME sample rate
-        if chime_sample_rate == 16000:
-            self.audio_suffix = ".16kHz.wav"
-        elif chime_sample_rate == 48000:
-            self.audio_suffix = ".48kHz.wav"
-        else:
-            raise ValueError(
-                f"Unsupported CHiME sample rate: {chime_sample_rate}. Use 16000 or 48000."
-            )
-
-        # Find all audio files with the specified suffix
-        pattern = os.path.join(chunks_dir, f"*{self.audio_suffix}")
-        self.audio_files = glob.glob(pattern)
-
-        if not self.audio_files:
-            raise ValueError(
-                f"No audio files found with suffix {self.audio_suffix} in {chunks_dir}"
-            )
-
-        print(
-            f"NoiseGenerator initialized with {len(self.audio_files)} CHiME-Home audio files"
-        )
-
-    def add_noise(self, audio: torch.Tensor) -> torch.Tensor:
-        """
-        Add CHiME-Home background noise to the input audio signal.
-
-        Args:
-            audio: Input audio tensor of shape (1, T) or (T,)
-
-        Returns:
-            Noisy audio tensor with the same shape as input
-        """
-        if audio.dim() == 1:
-            audio = audio.unsqueeze(0)
-
-        original_shape = audio.shape
-        audio_length = audio.shape[-1]
-
-        # Generate background noise from CHiME-Home
-        noise = self._generate_chime_noise(audio_length)
-
-        # Calculate signal and noise power
-        signal_power = torch.mean(audio**2)
-        noise_power = torch.mean(noise**2)
-
-        # Avoid division by zero
-        if noise_power == 0:
-            warnings.warn("Generated noise has zero power, returning original audio")
-            if len(original_shape) == 1:
-                return audio.squeeze(0)
-            return audio
-
-        # Calculate scaling factor for desired SNR
-        snr_linear = 10 ** (self.snr_db / 10)
-        noise_scale = torch.sqrt(signal_power / (snr_linear * noise_power))
-
-        # Add scaled noise to signal
-        noisy_audio = audio + noise_scale * noise
-
-        # Normalize to ensure amplitude stays within [-1, 1]
-        max_abs = torch.max(torch.abs(noisy_audio))
-        if max_abs > 1.0:
-            noisy_audio = noisy_audio / max_abs
-
-        # Return in original shape
-        if len(original_shape) == 1:
-            return noisy_audio.squeeze(0)
-        return noisy_audio
-
-    def _generate_chime_noise(self, length: int) -> torch.Tensor:
-        """Generate noise from random CHiME-Home audio chunk."""
-        # Randomly select an audio file
-        audio_path = random.choice(self.audio_files)
-        audio_filename = os.path.basename(audio_path)
-
-        # Check cache first
-        if self.enable_caching and audio_filename in self.audio_cache:
-            noise_audio = self.audio_cache[audio_filename]
-        else:
-            try:
-                noise_audio, chime_sr = torchaudio.load(audio_path)
-
-                # Convert to mono if stereo (for 48kHz files)
-                if noise_audio.shape[0] > 1:
-                    noise_audio = torch.mean(noise_audio, dim=0, keepdim=True)
-
-                # Resample noise to match target sample rate
-                if chime_sr != self.target_sample_rate:
-                    resampler = torchaudio.transforms.Resample(
-                        chime_sr, self.target_sample_rate
-                    )
-                    noise_audio = resampler(noise_audio)
-
-                # Cache the processed audio
-                if self.enable_caching:
-                    self.audio_cache[audio_filename] = noise_audio.clone()
-
-            except Exception as e:
-                print(f"Warning: Could not load audio file {audio_path}: {e}")
-                return torch.zeros(1, length)
-
-        # Handle length mismatch
-        current_length = noise_audio.shape[-1]
-
-        if current_length < length:
-            # Repeat the noise if it's shorter than needed
-            repeats = (length // current_length) + 1
-            noise_audio = noise_audio.repeat(1, repeats)
-
-        # Crop to desired length
-        if noise_audio.shape[-1] > length:
-            # Random crop for variety
-            start_idx = random.randint(0, noise_audio.shape[-1] - length)
-            noise_audio = noise_audio[:, start_idx : start_idx + length]
-        elif noise_audio.shape[-1] < length:
-            noise_audio = noise_audio[:, :length]
-
-        return noise_audio
+from datasets import get_dataset, list_datasets, CHiMeNoiseDataset
 
 
 def optimize_thresholds(
@@ -177,7 +18,6 @@ def optimize_thresholds(
     fmin: int,
     fmax: int,
     algorithms: List,
-    noise_generator: Optional[NoiseGenerator],
     threshold_range: List[float] = [0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
 ) -> Dict:
     """
@@ -225,15 +65,7 @@ def optimize_thresholds(
             for idx in range(len(validation_dataset)):
                 try:
                     sample = validation_dataset[idx]
-                    audio = sample["audio"]
-
-                    # Apply noise if specified
-                    if noise_generator is not None:
-                        audio = noise_generator.add_noise(audio)
-                        if audio.dim() > 1:
-                            audio = audio.squeeze(0)
-
-                    audio = audio.numpy()
+                    audio = sample["audio"].numpy()
                     true_voicing = sample["periodicity"].numpy()
 
                     _, pred_voicing = algo.extract_pitch(audio, threshold)
@@ -358,7 +190,6 @@ def evaluate_pitch_algorithms(
     fmin: int,
     fmax: int,
     algorithms: List[Tuple],
-    noise_generator: Optional[NoiseGenerator],
 ) -> Dict:
     """
     Evaluate multiple pitch detection algorithms with comprehensive metrics.
@@ -368,7 +199,6 @@ def evaluate_pitch_algorithms(
         fmin: Minimum frequency in Hz
         fmax: Maximum frequency in Hz
         algorithms: List of tuples (algorithm_class, threshold)
-        noise_generator: NoiseGenerator instance or None
 
     Returns:
         Dictionary containing comprehensive evaluation metrics for each algorithm
@@ -395,15 +225,7 @@ def evaluate_pitch_algorithms(
         ):
             try:
                 sample = dataset[idx]
-                audio = sample["audio"]
-
-                # Apply noise if specified
-                if noise_generator is not None:
-                    audio = noise_generator.add_noise(audio)
-                    if audio.dim() > 1:
-                        audio = audio.squeeze(0)
-
-                audio = audio.numpy()
+                audio = sample["audio"].numpy()
                 true_pitch = sample["pitch"].numpy()
                 true_voicing = sample["periodicity"].numpy()
 
@@ -695,25 +517,28 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    # Initialize dataset
+    # Initialize base dataset
     dataset_class = get_dataset(args.dataset)
-    dataset = dataset_class(
+    base_dataset = dataset_class(
         root_dir=args.data_dir,
         sample_rate=args.sample_rate,
         hop_size=args.hop_size,
     )
 
+    # Wrap with noise augmentation if requested
+    if args.noise_dir:
+        dataset = CHiMeNoiseDataset(
+            base_dataset=base_dataset,
+            chime_home_dir=args.noise_dir,
+            chime_sample_rate=16000,
+            snr_db=args.snr,
+            noise_probability=1.0,
+        )
+    else:
+        dataset = base_dataset
+
     # Map algorithm names to classes
     algorithms = [get_algorithm(name) for name in args.algorithms]
-
-    # Set up noise configuration
-    noise_generator = None
-    if args.noise_dir:
-        noise_generator = NoiseGenerator(
-            chime_home_dir=args.noise_dir,
-            snr_db=args.snr,
-            target_sample_rate=args.sample_rate,
-        )
 
     # Find optimal thresholds
     optimal_thresholds = optimize_thresholds(
@@ -722,7 +547,6 @@ if __name__ == "__main__":
         fmin=args.fmin,
         fmax=args.fmax,
         algorithms=algorithms,
-        noise_generator=noise_generator,
     )
     print(f"Thresholds: {optimal_thresholds}")
 
@@ -748,6 +572,5 @@ if __name__ == "__main__":
         fmax=args.fmax,
         dataset=dataset,
         algorithms=optimized_algorithms,
-        noise_generator=noise_generator,
     )
     print_evaluation_results(metrics)
