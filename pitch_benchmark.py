@@ -699,7 +699,6 @@ if __name__ == "__main__":
     dataset_class = get_dataset(args.dataset)
     dataset = dataset_class(
         root_dir=args.data_dir,
-        use_cache=False,
         sample_rate=args.sample_rate,
         hop_size=args.hop_size,
     )
