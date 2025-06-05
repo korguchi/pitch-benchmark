@@ -75,9 +75,6 @@ class NoiseAugmentedDataset(torch.utils.data.Dataset):
             raise ValueError(f"No audio files found in {noise_dir}")
 
         self.noise_sample_rate = noise_sample_rate
-        print(
-            f"NoiseAugmentedDataset initialized with {len(self.noise_files)} noise files"
-        )
 
     def __len__(self) -> int:
         """Return length of the underlying dataset."""

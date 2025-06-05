@@ -8,6 +8,7 @@ from tqdm import tqdm
 from torch.utils.data import Dataset, Subset
 import torch
 import torchaudio
+from scipy.stats import hmean
 from algorithms import get_algorithm, list_algorithms
 from datasets import get_dataset, list_datasets, CHiMeNoiseDataset
 
@@ -262,10 +263,19 @@ def evaluate_pitch_algorithms(
             pitch_metrics = evaluate_pitch_accuracy(
                 global_pred_pitch, global_true_pitch, global_voiced_mask
             )
+            combined_score = hmean(
+                [
+                    voicing_metrics["precision"],
+                    voicing_metrics["recall"],
+                    pitch_metrics["rpa"],
+                    pitch_metrics["rca"],
+                ]
+            )
 
             results[algo_name] = {
                 "voicing_detection": voicing_metrics,
                 "pitch_accuracy": pitch_metrics,
+                "combined_score": combined_score,
                 "num_files_processed": len(all_pred_voicing),
                 "total_frames": len(global_pred_voicing),
             }
@@ -283,6 +293,7 @@ def evaluate_pitch_algorithms(
                     "rpa": np.nan,
                     "rca": np.nan,
                 },
+                "combined_score": np.nan,
                 "num_files_processed": 0,
                 "total_frames": 0,
             }
@@ -352,9 +363,7 @@ def print_evaluation_results(metrics: Dict):
             [
                 (
                     "Harmonic Mean ↑",
-                    lambda m: format_metric(
-                        calculate_combined_score(m), percentage=True
-                    ),
+                    lambda m: format_metric(m["combined_score"], percentage=True),
                 ),
             ],
         ),
@@ -389,66 +398,6 @@ def print_evaluation_results(metrics: Dict):
                 error_values = ["N/A".center(16)] * len(metrics_info)
                 print(format_str.format(algo_display, *error_values))
                 print(f"  Warning: Error formatting {algo_name}: {e}")
-
-
-def calculate_combined_score(metrics: Dict) -> float:
-    """
-    Calculate a combined performance score using the harmonic mean of multiple pitch detection metrics.
-
-    The harmonic mean is used instead of arithmetic mean because it requires balanced performance
-    across ALL metrics - a system must perform well on both voicing detection and pitch accuracy
-    to achieve a good score. Poor performance in any single metric heavily impacts the final score.
-
-    The metrics included are:
-    - Precision (voicing detection)
-    - Recall (voicing detection)
-    - RPA (Raw Pitch Accuracy)
-    - RCA (Raw Chroma Accuracy)
-
-    All metrics are already in [0,1] range where 1 is best.
-
-    Args:
-        metrics (Dict): A dictionary with the following structure:
-            {
-                "voicing_detection": {
-                    "precision": float,
-                    "recall": float
-                },
-                "pitch_accuracy": {
-                    "rpa": float,
-                    "rca": float
-                }
-            }
-
-    Returns:
-        float: Harmonic mean of the selected metrics, or np.nan if any metric is missing or invalid.
-    """
-    EPSILON = 1e-10  # Small constant to prevent division by zero
-
-    try:
-        # Extract the same metrics as the original function
-        values = [
-            metrics["voicing_detection"]["precision"],
-            metrics["voicing_detection"]["recall"],
-            metrics["pitch_accuracy"]["rpa"],
-            metrics["pitch_accuracy"]["rca"],
-        ]
-
-        values = np.array(values)
-
-        # Check for NaN values
-        if np.any(np.isnan(values)):
-            return np.nan
-
-        # Ensure no zeros
-        values = np.clip(values, EPSILON, 1.0)
-
-        # Calculate harmonic mean
-        harmonic_mean = len(values) / np.sum(1 / values)
-        return harmonic_mean
-
-    except (KeyError, TypeError, ZeroDivisionError):
-        return np.nan
 
 
 if __name__ == "__main__":
