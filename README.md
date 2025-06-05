@@ -4,33 +4,35 @@ A comprehensive benchmark suite for evaluating and comparing different pitch det
 
 ## 📊 Key Findings
 
-Praat demonstrates the best overall performance, achieving the highest average harmonic-mean accuracy (78.4%) across three datasets and maintaining a 245-cent average error while processing audio faster than all the other algorithms. While TorchCREPE achieves lower pitch errors on individual datasets, it is much slower and has lower recall. For a detailed breakdown of results, see [Benchmark Results](benchmark_results.md).
+Praat demonstrates the best overall performance, achieving the highest average harmonic-mean accuracy (79.3%) across four datasets and maintaining a 201-cent average error while processing audio faster than all the other algorithms. While TorchCREPE achieves lower pitch errors on individual datasets, it is much slower and has lower recall. For a detailed breakdown of results, see [Benchmark Results](benchmark_results.md).
 
-In the tables below, any entry marked with “†” indicates that the algorithm was trained (or partially trained) on that same dataset, so its performance on that split is inflated by data leakage and should not be directly compared to the other methods.
+In the tables below, any entry marked with “†” indicates that the algorithm was trained (or partially trained) on that same dataset, so its performance on that split may be inflated by data leakage and should not be directly compared to the other methods.
 
-### Pitch accuracy (↑ higher is better)
+### Pitch Accuracy (↑ higher is better)
 
-| Algorithm  | NSynth    | PTDB      | MDB‑STEM‑Synth | Average   |
-| ---------- | --------- | --------- | -------------- | --------- |
-| YAAPT      | 64.0%     | 77.6%     | 77.7%          | 73.1%     |
-| Praat      | **79.0%** | 74.4%     | 81.8%          | **78.4%** |
-| SWIPE      | 63.9%     | 71.4%     | 78.8%          | 71.4%     |
-| RAPT       | 71.9%     | 67.9%     | **85.9%**      | 75.2%     |
-| pYIN       | 73.2%     | 62.8%     | 79.3%          | 71.8%     |
-| TorchCREPE | 76.7%     | 73.2%     | 78.7%†         | 76.2%     |
-| PENN       | 55.5%     | 86.8%†    | 86.8%†         | 76.4%     |
+| Algorithm  | NSynth    | PTDB      | MDB‑STEM‑Synth | SpeechSynth | Average   |
+| ---------- | --------- | --------- | -------------- | ----------- | --------- |
+| YAAPT      | 64.0%     | **77.6%** | 77.7%          | **82.4%**   | 75.4%     |
+| Praat      | **79.0%** | 74.4%     | 81.8%          | 82.2%       | **79.3%** |
+| SWIPE      | 63.9%     | 71.4%     | 78.8%          | 79.2%       | 73.3%     |
+| RAPT       | 71.9%     | 67.9%     | **85.9%**      | 78.0%       | 75.9%     |
+| pYIN       | 73.2%     | 62.8%     | 79.3%          | 75.9%       | 72.8%     |
+| TorchCREPE | 76.7%     | 73.2%     | 78.7%†         | 80.8%       | 77.4%     |
+| PENN       | 55.5%     | 86.8%†    | 86.8%†         | 72.1%       | 75.3%     |
+| BasicPitch | 78.6%     | 71.1%     | 54.2%          | 74.8%       | 69.7%     |
 
 ### Cents Error (↓ lower is better)
 
-| Algorithm   | NSynth   | PTDB    | MDB-STEM-Synth | Average  |
-|-------------|----------|---------|----------------|----------|
-| YAAPT       | 1045.09  | 105.95  | 366.13         | 505.72   |
-| Praat       | 580.77   | 75.12   | **80.45**   | **245.45**   |
-| SWIPE       | 916.74   | 131.11  | 119.05         | 388.97   |
-| RAPT        | 720.48   | 118.70  | 97.72          | 312.30   |
-| pYIN        | 648.25   | 80.08   | 127.57         | 285.30   |
-| TorchCREPE  | **101.93** | **71.23**  | 14.34†        | 62.50    |
-| PENN        | 1364.99  | 55.55† | 146.70†          | 522.41   |
+| Algorithm  | NSynth     | PTDB      | MDB‑STEM‑Synth | SpeechSynth | Average    |
+| ---------- | ---------- | --------- | -------------- | ----------- | ---------- |
+| YAAPT      | 1045.09    | 105.95    | 366.13         | 63.18       | 395.09     |
+| Praat      | 580.77     | 75.12     | **80.45**      | 69.11       | **201.36** |
+| SWIPE      | 916.74     | 131.11    | 119.05         | 86.28       | 313.29     |
+| RAPT       | 720.48     | 118.70    | 97.72          | 75.65       | 253.14     |
+| pYIN       | 648.25     | 80.08     | 127.57         | 47.83       | 225.93     |
+| TorchCREPE | **101.93** | **71.23** | 14.34†         | **36.24**   | 55.94      |
+| PENN       | 1364.99    | 55.55†    | 146.70†        | 74.56       | 410.45     |
+| BasicPitch | 660.44     | 101.42    | 266.40         | 53.84       | 270.52     |
 
 ## 🚀 Quick Start
 
@@ -59,10 +61,11 @@ python pitch_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
 
 ## 🛠️ Features
 
-- Comprehensive evaluation across standard datasets:
+- Comprehensive evaluation across various datasets:
   - [PTDB](https://www.spsc.tugraz.at/databases-and-tools/ptdb-tug-pitch-tracking-database-from-graz-university-of-technology.html)
   - [NSynth](https://magenta.tensorflow.org/datasets/nsynth)
   - [MDB-stem-synth](https://zenodo.org/records/1481172)
+  - A novel synthetic speech dataset: SpeechSynth
 - Performance benchmarking for CPU and GPU execution
 - Testing under noisy conditions: [CHiME-Home dataset](https://archive.org/details/chime-home)
 - Visualization tools for algorithm comparison

@@ -2,18 +2,21 @@ from .base import PitchDataset
 from .ptdb import PitchDatasetPTDB
 from .mdb import PitchDatasetMDBStemSynth
 from .nsynth import PitchDatasetNSynth
+from .speechsynth import PitchDatasetSpeechSynth
 
 __all__ = [
     "PitchDataset",
     "PitchDatasetPTDB",
     "PitchDatasetMDBStemSynth",
     "PitchDatasetNSynth",
+    "PitchDatasetSpeechSynth",
 ]
 
 _REGISTRY = {
     "PTDB": PitchDatasetPTDB,
     "NSynth": PitchDatasetNSynth,
     "MDBStemSynth": PitchDatasetMDBStemSynth,
+    "SpeechSynth": PitchDatasetSpeechSynth,
 }
 
 
