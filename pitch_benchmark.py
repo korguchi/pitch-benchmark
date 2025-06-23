@@ -132,6 +132,7 @@ def evaluate_pitch_accuracy(
     pitch_true: np.ndarray,
     valid_mask: np.ndarray,
     epsilon: float = 50.0,
+    gross_error_threshold: float = 200.0,
 ) -> Dict:
     """
     Evaluate pitch accuracy between predicted and ground truth pitch values.
@@ -141,6 +142,7 @@ def evaluate_pitch_accuracy(
         pitch_true: Ground truth pitch values in Hz (T,)
         valid_mask: Boolean array indicating which time steps contain valid pitch values for evaluation
         epsilon: Tolerance for RPA/RCA calculation in cents
+        gross_error_threshold: Threshold for gross error calculation in cents
 
     Returns:
         Dictionary containing pitch accuracy metrics
@@ -156,6 +158,8 @@ def evaluate_pitch_accuracy(
             "cents_error": np.nan,
             "rpa": np.nan,
             "rca": np.nan,
+            "octave_error_rate": np.nan,
+            "gross_error_rate": np.nan,
             "valid_frames": 0,
         }
 
@@ -177,11 +181,24 @@ def evaluate_pitch_accuracy(
     chroma_diff = np.minimum(wrapped_cents_diff, 1200 - wrapped_cents_diff)
     rca = np.mean(chroma_diff < epsilon)
 
+    # Gross error rate (errors > gross_error_threshold cents)
+    gross_error_rate = np.mean(cents_diff > gross_error_threshold)
+
+    # Octave error detection
+    relative_error = np.abs(pred - true) / (true + np.finfo(float).eps)
+    octave_errors = np.logical_or(
+        relative_error > 0.4,  # More than 40% error
+        (cents_diff > 1100) & (cents_diff < 1300),  # Near octave (1200 cents)
+    )
+    octave_error_rate = np.mean(octave_errors)
+
     return {
         "rmse": rmse,
         "cents_error": np.mean(cents_diff),
         "rpa": rpa,
         "rca": rca,
+        "octave_error_rate": octave_error_rate,
+        "gross_error_rate": gross_error_rate,
         "valid_frames": np.sum(valid_mask),
     }
 
@@ -263,14 +280,35 @@ def evaluate_pitch_algorithms(
             pitch_metrics = evaluate_pitch_accuracy(
                 global_pred_pitch, global_true_pitch, global_voiced_mask
             )
-            combined_score = hmean(
-                [
-                    voicing_metrics["precision"],
-                    voicing_metrics["recall"],
-                    pitch_metrics["rpa"],
-                    pitch_metrics["rca"],
-                ]
-            )
+
+            # Calculate enhanced harmonic mean (6-component)
+            rpa = pitch_metrics["rpa"]
+            cents_error = pitch_metrics["cents_error"]
+            octave_error_rate = pitch_metrics["octave_error_rate"]
+            gross_error_rate = pitch_metrics["gross_error_rate"]
+            voicing_recall = voicing_metrics["recall"]
+            voicing_precision = voicing_metrics["precision"]
+
+            # Transform error rates to accuracy scores using exponential decay
+            cents_accuracy = np.exp(-cents_error / 500.0)
+            octave_accuracy = np.exp(-octave_error_rate * 10.0)
+            gross_error_accuracy = np.exp(-gross_error_rate * 5.0)
+
+            # Collect all six components for harmonic mean calculation
+            components = [
+                rpa,  # Raw pitch accuracy (frames with <50¢ error)
+                cents_accuracy,  # Fine-grained pitch precision
+                voicing_recall,  # Voiced segment detection completeness
+                voicing_precision,  # Voiced segment detection accuracy
+                octave_accuracy,  # Octave error robustness
+                gross_error_accuracy,  # Overall tracking stability
+            ]
+
+            # Compute 6-component harmonic mean with safety check
+            if any(component <= 0 for component in components):
+                combined_score = 0.0
+            else:
+                combined_score = 6.0 / sum(1.0 / component for component in components)
 
             results[algo_name] = {
                 "voicing_detection": voicing_metrics,
@@ -292,6 +330,8 @@ def evaluate_pitch_algorithms(
                     "cents_error": np.nan,
                     "rpa": np.nan,
                     "rca": np.nan,
+                    "octave_error_rate": np.nan,
+                    "gross_error_rate": np.nan,
                 },
                 "combined_score": np.nan,
                 "num_files_processed": 0,
@@ -354,6 +394,23 @@ def print_evaluation_results(metrics: Dict):
                     "RCA ↑",
                     lambda m: format_metric(
                         m["pitch_accuracy"]["rca"], percentage=True
+                    ),
+                ),
+            ],
+        ),
+        (
+            "Pitch Robustness",
+            [
+                (
+                    "Octave Err % ↓",
+                    lambda m: format_metric(
+                        m["pitch_accuracy"]["octave_error_rate"], percentage=True
+                    ),
+                ),
+                (
+                    "Gross Err % ↓",
+                    lambda m: format_metric(
+                        m["pitch_accuracy"]["gross_error_rate"], percentage=True
                     ),
                 ),
             ],
