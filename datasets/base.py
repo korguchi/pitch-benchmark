@@ -62,6 +62,10 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
                 f"fmax ({fmax} Hz) must not exceed Nyquist frequency ({sample_rate / 2} Hz)"
             )
 
+    def get_group(self, idx: int) -> str:
+        """Return group identifier for sample (speaker/instrument)"""
+        return str(idx)  # Default: each sample is its own group
+
     def _validate_audio(self, audio: torch.Tensor) -> torch.Tensor:
         """
         Validates and normalizes audio data.

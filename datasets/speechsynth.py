@@ -412,6 +412,11 @@ class PitchDatasetSpeechSynth(PitchDataset):
 
         return token_ids, tone_ids
 
+    def get_group(self, idx: int) -> str:
+        """Return group identifier for sample (speaker ID)"""
+        speaker_id = idx // self.samples_per_speaker
+        return f"speaker_{speaker_id}"
+
     def __len__(self) -> int:
         return self.total_samples
 

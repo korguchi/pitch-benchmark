@@ -222,6 +222,10 @@ class PitchDatasetNSynth(PitchDataset):
 
         return voiced_mask
 
+    def get_group(self, idx: int) -> str:
+        _, info = self.examples[idx]
+        return info["instrument_family_str"]  # Unique instrument family ID
+
     def __len__(self) -> int:
         """Returns the number of examples in the filtered dataset."""
         return len(self.examples)

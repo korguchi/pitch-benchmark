@@ -71,6 +71,12 @@ class PitchDatasetMDBStemSynth(PitchDataset):
         """Return the total number of samples in the dataset."""
         return len(self.wav_f0_pairs)
 
+    def get_group(self, idx: int) -> str:
+        """Return group identifier for sample (artist name)"""
+        file_path = self.wav_f0_pairs[idx][0]
+        # Extract artist from filename (first part before underscore)
+        return file_path.stem.split("_")[0]
+
     def __getitem__(self, idx: int) -> Dict[str, Union[torch.Tensor, Path]]:
         """Get a sample from the dataset."""
         if not 0 <= idx < len(self):

@@ -80,6 +80,11 @@ class PitchDatasetPTDB(PitchDataset):
                     pairs.append((wav_path, f0_path))
         return pairs
 
+    def get_group(self, idx: int) -> str:
+        wav_path = self.wav_f0_pairs[idx][0]
+        parts = wav_path.stem.split("_")
+        return parts[1] if len(parts) >= 2 else "unknown"  # e.g., "F08"
+
     def __len__(self) -> int:
         return len(self.wav_f0_pairs)
 
