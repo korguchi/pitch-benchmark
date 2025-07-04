@@ -474,7 +474,6 @@ class PitchDatasetSpeechSynth(PitchDataset):
 
         # Calculate which speaker this sample belongs to
         speaker_id = idx // self.samples_per_speaker
-        sample_idx_for_speaker = idx % self.samples_per_speaker
 
         if idx not in self.data_cache or not self.use_cache:
             try:

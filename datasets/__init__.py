@@ -4,8 +4,7 @@ from .mdb import PitchDatasetMDBStemSynth
 from .nsynth import PitchDatasetNSynth
 from .speechsynth import PitchDatasetSpeechSynth
 from .mir1k import PitchDatasetMIR1K
-from .transforms import NoiseAugmentedDataset, CHiMeNoiseDataset
-from .utils import ChunkedPitchDataset, pitch_collate_fn
+from .noise import NoiseAugmentedDataset, CHiMeNoiseDataset
 
 __all__ = [
     "PitchDataset",
@@ -16,8 +15,6 @@ __all__ = [
     "PitchDatasetMIR1K",
     "NoiseAugmentedDataset",
     "CHiMeNoiseDataset",
-    "ChunkedPitchDataset",
-    "pitch_collate_fn",
 ]
 
 _REGISTRY = {

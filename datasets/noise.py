@@ -195,7 +195,6 @@ class NoiseAugmentedDataset(torch.utils.data.Dataset):
         return noise_audio
 
 
-# Example usage and convenience functions
 class CHiMeNoiseDataset(NoiseAugmentedDataset):
     """Convenience wrapper specifically for CHiME-Home noise."""
 
