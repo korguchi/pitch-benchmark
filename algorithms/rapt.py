@@ -23,4 +23,10 @@ class RAPTPitchAlgorithm(ThresholdPitchAlgorithm):
             otype="f0",
         )
 
-        return f0, (f0 >= self.fmin).astype(np.float32)
+        # Build time‐axis (center of RAPT’s ~3‑period window)
+        n_frames = len(f0)
+        # RAPT’s window ≈ 3 periods of the lowest F0:
+        window_center = int((self.sample_rate / self.fmin) * 1.5)
+        times = (np.arange(n_frames) * self.hop_size + window_center) / self.sample_rate
+
+        return times, f0, (f0 >= self.fmin).astype(np.float32)

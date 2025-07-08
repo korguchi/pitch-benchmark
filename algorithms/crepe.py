@@ -48,7 +48,7 @@ class CREPEPitchAlgorithm(ContinuousPitchAlgorithm):
         self, audio: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
         with tf.device(self.tf_device):
-            _, frequency, confidence, _ = crepe.predict(
+            times, frequency, confidence, _ = crepe.predict(
                 audio,
                 self.sample_rate,
                 model_capacity=self.model,
@@ -56,4 +56,4 @@ class CREPEPitchAlgorithm(ContinuousPitchAlgorithm):
                 step_size=self.step_size,
                 verbose=0,
             )
-        return frequency, confidence
+        return times, frequency, confidence

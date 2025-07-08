@@ -22,4 +22,9 @@ class SWIPEPitchAlgorithm(ThresholdPitchAlgorithm):
             otype="f0",
         )
 
-        return f0, (f0 >= self.fmin).astype(np.float32)
+        # Time axis: approximate center of variable window using half-hop
+        n_frames = len(f0)
+        half_hop = self.hop_size / 2
+        times = (np.arange(n_frames) * self.hop_size + half_hop) / self.sample_rate
+
+        return times, f0, (f0 >= self.fmin).astype(np.float32)

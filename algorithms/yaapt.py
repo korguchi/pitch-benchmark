@@ -62,4 +62,8 @@ class YAAPTPitchAlgorithm(ThresholdPitchAlgorithm):
         # Get pitch values and voicing decisions
         pitch_values = pitch.samp_values
 
-        return pitch_values, (pitch_values >= self.fmin).astype(np.float32)
+        # use YAAPT’s own frame positions for accurate time stamps
+        # frames_pos is in samples, so divide by sample_rate to get seconds
+        times = np.array(pitch.frames_pos) / self.sample_rate
+
+        return times, pitch_values, (pitch_values >= self.fmin).astype(np.float32)

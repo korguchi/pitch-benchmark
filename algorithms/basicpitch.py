@@ -72,6 +72,7 @@ class BasicPitchPitchAlgorithm(ContinuousPitchAlgorithm):
 
         # Extract note activation matrix: shape (time, pitch)
         note_activations = model_output["note"]
+        n_frames = note_activations.shape[0]
 
         # Basic Pitch uses 88 piano keys (A0 to C8), starting from MIDI note 21
         num_pitches = note_activations.shape[1]
@@ -92,4 +93,8 @@ class BasicPitchPitchAlgorithm(ContinuousPitchAlgorithm):
         # Convert MIDI indices to frequencies
         pitch_estimates = frequencies[max_indices]
 
-        return pitch_estimates, max_confidences
+        # Calculate timestamps (Basic Pitch outputs at 100Hz)
+        frame_rate = 100.0  # Fixed frame rate per Basic Pitch constants
+        times = np.arange(n_frames) / frame_rate
+
+        return times, pitch_estimates, max_confidences

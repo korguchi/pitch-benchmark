@@ -36,9 +36,11 @@ class TorchCREPEPitchAlgorithm(ContinuousPitchAlgorithm):
 
     def _extract_raw_pitch_and_periodicity(
         self, audio: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        # Convert to tensor and add batch dimension
         audio_tensor = torch.from_numpy(audio).to(self.device).unsqueeze(0)
 
+        # Run prediction
         pitch, periodicity = torchcrepe.predict(
             audio_tensor,
             self.sample_rate,
@@ -50,6 +52,16 @@ class TorchCREPEPitchAlgorithm(ContinuousPitchAlgorithm):
             decoder=self.decoder,
             device=self.device,
             batch_size=2048,
+            pad=True,  # Ensure consistent frame count
         )
 
-        return pitch.squeeze().cpu().numpy(), periodicity.squeeze().cpu().numpy()
+        # Convert to numpy arrays and remove batch dimension
+        pitch = pitch.squeeze().cpu().numpy()
+        periodicity = periodicity.squeeze().cpu().numpy()
+
+        # Calculate time points (center-aligned frames)
+        n_frames = len(pitch)
+        frame_centers = np.arange(n_frames) * self.hop_size + (1024 // 2)
+        times = frame_centers / self.sample_rate
+
+        return times, pitch, periodicity

@@ -4,20 +4,19 @@ A comprehensive benchmark suite for evaluating and comparing different pitch det
 
 ## 📊 Key Findings
 
-TorchCREPE achieves the highest average harmonic-mean accuracy (79.9%) across four datasets, but suffers from lower voicing recall and being the slowest algorithm. Praat delivers the best speed-accuracy balance. It processes audio faster than all competitors while maintaining the second-best overall accuracy (59.2%). For a detailed breakdown of results, see [Benchmark Results](benchmark_results.md).
+SwiftF0 achieves the highest average harmonic‑mean accuracy (77.0%) across five datasets while also delivering near real‑time performance (≈42× faster than the TorchCREPE baseline on CPU). TorchCREPE follows with the second‑highest average accuracy (68.6%) but remains the slowest algorithm (≈5.5 s to process 5 s of audio on CPU). Praat delivers the best speed–accuracy balance: it processes 5 s of audio in just 7 ms on CPU (≈809× faster than TorchCREPE) while still maintaining strong overall accuracy (62.6%). For a detailed breakdown of results, see [Benchmark Results](benchmark_results.md).
 
-In the tables below, any entry marked with “†” indicates that the algorithm was trained (or partially trained) on that same dataset, so its performance on that split may be inflated by data leakage and should not be directly compared to the other methods.
-
-| Algorithm  | NSynth    | PTDB      | MDB‑STEM‑Synth | SpeechSynth | Average   |
-| ---------- | --------- | --------- | -------------- | ----------- | --------- |
-| YAAPT      | 2.2%      | 73.0%     | 24.1%          | 84.3%       | 45.9%     |
-| Praat      | 22.9%     | 73.1%     | 61.1%          | 79.5%       | 59.2%     |
-| SWIPE      | 11.0%     | 65.3%     | 69.0%          | 81.4%       | 56.7%     |
-| RAPT       | 13.1%     | 66.8%     | 75.2%          | 79.3%       | 58.6%     |
-| pYIN       | 17.5%     | 67.2%     | 67.3%          | 81.5%       | 58.4%     |
-| TorchCREPE | **73.1%†**     | 76.0%     | **83.6%†**         | **87.0%**       | **79.9%**     |
-| PENN       | 2.0%      | **84.4%†**    | 63.0%†         | 76.4%       | 56.5%     |
-| BasicPitch | 18.6%     | 71.9%     | 30.4%          | 83.0%       | 51.0%     |
+| **Algorithm**  | **NSynth** | **PTDB** | **SpeechSynth** | **MIR‑1K** | **MDB‑STEM‑Synth** | **Average** |
+| -------------- | ---------- | -------- | --------------- | ---------- | ------------------ | ----------- |
+| BasicPitch     | 11.9%      | 12.8%    | 55.9%           | 25.7%      | 8.1%               | 22.9%       |
+| pYIN           | 17.8%      | 72.3%    | 55.8%           | 89.4%      | **83.6%**              | 63.8%       |
+| Praat          | 22.5%      | 80.4%    | 77.0%           | 74.1%      | 59.1%              | 62.6%       |
+| PENN           | 2.0%       | 82.5%    | 77.0%           | 80.4%      | 61.4%              | 60.7%       |
+| RAPT           | 13.2%      | 70.7%    | 67.3%           | 76.5%      | 70.3%              | 59.6%       |
+| SWIPE          | 13.4%      | 50.8%    | 66.8%           | 73.6%      | 58.6%              | 52.6%       |
+| TorchCREPE     | **73.4%**      | 66.0%    | 82.4%           | 71.4%      | 49.6%              | 68.6%       |
+| YAAPT          | 2.3%       | 67.9%    | 78.7%           | 70.0%      | 24.9%              | 48.8%       |
+| SwiftF0        | 33.6%      | **87.0%**    | **88.7%**           | **93.3%**      | 82.6%              | **77.0%**       |
 
 ## 🚀 Quick Start
 
@@ -50,6 +49,7 @@ python pitch_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
   - [PTDB](https://www.spsc.tugraz.at/databases-and-tools/ptdb-tug-pitch-tracking-database-from-graz-university-of-technology.html)
   - [NSynth](https://magenta.tensorflow.org/datasets/nsynth)
   - [MDB-stem-synth](https://zenodo.org/records/1481172)
+  - [MIR-1K](https://zenodo.org/records/3532216)
   - A novel synthetic speech dataset: SpeechSynth
 - Performance benchmarking for CPU and GPU execution
 - Testing under noisy conditions: [CHiME-Home dataset](https://archive.org/details/chime-home)
@@ -63,6 +63,7 @@ python pitch_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
   - [RAPT](https://pysptk.readthedocs.io/en/latest/generated/pysptk.sptk.rapt.html) (SPTK implementation)
   - [pYIN](https://librosa.org/doc/main/generated/librosa.pyin.html) (librosa implementation)
   - [BasicPitch](https://github.com/spotify/basic-pitch)
+  - [SwiftF0](https://github.com/lars76/swift_f0)
 
 ## 🤝 Contributing
 

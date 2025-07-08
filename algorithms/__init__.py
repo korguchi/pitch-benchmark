@@ -13,6 +13,7 @@ _ALGORITHM_METADATA = {
     "YAAPT": ("yaapt", "YAAPTPitchAlgorithm", ["AMFM-decompy"]),
     "pYIN": ("pyin", "pYINPitchAlgorithm", ["librosa"]),
     "BasicPitch": ("basicpitch", "BasicPitchPitchAlgorithm", ["basic-pitch"]),
+    "SwiftF0": ("swiftf0", "SwiftF0PitchAlgorithm", ["swift_f0"]),
 }
 
 __all__ = ["PitchAlgorithm", "get_algorithm", "register_algorithm", "list_algorithms"]

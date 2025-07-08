@@ -30,30 +30,35 @@ class PitchAlgorithm(ABC):
             raise ValueError("Empty audio input")
         if not np.isfinite(audio).all():
             raise ValueError("Audio contains non-finite values")
-        if not (-1.0 <= audio).all() and (audio <= 1.0).all():
+        if not (-1.0 <= audio).all() or not (audio <= 1.0).all():
             raise ValueError("Audio must be normalized to [-1, 1]")
 
-    def _resample(
-        self, pitch: np.ndarray, periodicity: np.ndarray, audio_length: int
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Align pitch and periodicity to match the audio length based on hop size."""
-        target_length = audio_length // self.hop_size
-        if target_length <= 0 or len(pitch) == 0:
-            return np.zeros(max(0, target_length)), np.zeros(max(0, target_length))
+    def _compute_target_times(self, audio_length: int) -> np.ndarray:
+        """Generate uniform time grid based on hop_size."""
+        n_hops = audio_length // self.hop_size
+        return np.arange(n_hops) * (self.hop_size / self.sample_rate)
 
-        original_points = np.linspace(0, 1, len(pitch))
-        target_points = np.linspace(0, 1, target_length)
-        aligned_pitch = np.interp(target_points, original_points, pitch)
-        aligned_periodicity = np.interp(target_points, original_points, periodicity)
-        return aligned_pitch, aligned_periodicity
+    def _align_to_grid(
+        self, algorithm_times: np.ndarray, values: np.ndarray, target_times: np.ndarray
+    ) -> np.ndarray:
+        """Align values from algorithm's time grid to target grid."""
+        if len(algorithm_times) == 0:
+            return np.zeros_like(target_times)
+
+        return np.interp(target_times, algorithm_times, values, left=0.0, right=0.0)
 
     def _sanity_check(
         self, pitch: np.ndarray, periodicity: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Perform sanity checks and cleaning on pitch and periodicity values."""
+        """Sanity checks and cleaning of pitch/periodicity values."""
         periodicity = np.nan_to_num(periodicity, nan=0.0)
         pitch = np.nan_to_num(pitch, nan=0.0)
-        pitch = np.clip(pitch, self.fmin, self.fmax)
+
+        # Preserve unvoiced regions (periodicity <= 0)
+        voiced = periodicity > 0
+        pitch[~voiced] = 0.0
+        pitch[voiced] = np.clip(pitch[voiced], self.fmin, self.fmax)
+
         periodicity = np.clip(periodicity, 0.0, 1.0)
         return pitch, periodicity
 
@@ -108,8 +113,15 @@ class ContinuousPitchAlgorithm(PitchAlgorithm):
     @abstractmethod
     def _extract_raw_pitch_and_periodicity(
         self, audio: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract raw pitch and continuous periodicity values from audio."""
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Extract raw pitch and continuous periodicity values from audio.
+
+        Returns:
+            Tuple containing:
+                - Time points (seconds)
+                - Pitch values (Hz)
+                - Periodicity values (0.0 to 1.0)
+        """
         pass
 
     def extract_continuous_periodicity(
@@ -117,10 +129,14 @@ class ContinuousPitchAlgorithm(PitchAlgorithm):
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Extract pitch with continuous periodicity values."""
         self._validate_audio(audio)
-        pitch, periodicity = self._extract_raw_pitch_and_periodicity(audio)
+        times, pitch, periodicity = self._extract_raw_pitch_and_periodicity(audio)
         pitch, periodicity = self._sanity_check(pitch, periodicity)
-        pitch, periodicity = self._resample(pitch, periodicity, len(audio))
-        return pitch, periodicity
+
+        target_times = self._compute_target_times(len(audio))
+        aligned_pitch = self._align_to_grid(times, pitch, target_times)
+        aligned_periodicity = self._align_to_grid(times, periodicity, target_times)
+
+        return aligned_pitch, aligned_periodicity
 
     def extract_pitch(
         self, audio: np.ndarray, threshold: Optional[float] = None
@@ -144,8 +160,15 @@ class ThresholdPitchAlgorithm(PitchAlgorithm):
     @abstractmethod
     def _extract_pitch_with_threshold(
         self, audio: np.ndarray, threshold: float
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract pitch and binary periodicity using threshold during extraction."""
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Extract pitch and binary periodicity using threshold during extraction.
+
+        Returns:
+            Tuple containing:
+                - Time points (seconds)
+                - Pitch values (Hz)
+                - Periodicity values (0.0 or 1.0)
+        """
         pass
 
     def _get_default_threshold(self) -> float:
@@ -160,7 +183,11 @@ class ThresholdPitchAlgorithm(PitchAlgorithm):
             threshold = self._get_default_threshold()
 
         self._validate_audio(audio)
-        pitch, periodicity = self._extract_pitch_with_threshold(audio, threshold)
+        times, pitch, periodicity = self._extract_pitch_with_threshold(audio, threshold)
         pitch, periodicity = self._sanity_check(pitch, periodicity)
-        pitch, periodicity = self._resample(pitch, periodicity, len(audio))
-        return pitch, periodicity.astype(bool)
+
+        target_times = self._compute_target_times(len(audio))
+        aligned_pitch = self._align_to_grid(times, pitch, target_times)
+        aligned_periodicity = self._align_to_grid(times, periodicity, target_times)
+
+        return aligned_pitch, aligned_periodicity.astype(bool)

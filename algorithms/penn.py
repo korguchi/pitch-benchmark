@@ -65,5 +65,23 @@ class PENNPitchAlgorithm(ContinuousPitchAlgorithm):
             gpu=self.gpu,
         )
 
+        # Calculate time points (center-aligned frames)
+        n_frames = pitch.shape[1]
+
+        # PENN uses fixed window size of 2048 samples at 8kHz
+        # Calculate time offset based on centering strategy
+        if self.center == "half-window":
+            # Center is at half window (1024 samples at 8kHz)
+            time_offset = 1024 / penn.SAMPLE_RATE
+        elif self.center == "half-hop":
+            # Center is at half hop (40 samples at 8kHz)
+            time_offset = 40 / penn.SAMPLE_RATE
+        else:  # "zero"
+            # Center is at window start
+            time_offset = 0
+
+        # Calculate time points
+        times = (np.arange(n_frames) * self.hopsize_seconds) + time_offset
+
         # Convert to numpy and remove batch dimension
-        return pitch.squeeze().cpu().numpy(), periodicity.squeeze().cpu().numpy()
+        return times, pitch.squeeze().cpu().numpy(), periodicity.squeeze().cpu().numpy()

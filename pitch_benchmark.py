@@ -350,7 +350,7 @@ def print_evaluation_results(metrics: Dict):
 
     sections = [
         (
-            "Voicing Detection Performance",
+            "Voicing Detection",
             [
                 (
                     "Precision ↑",
@@ -373,7 +373,7 @@ def print_evaluation_results(metrics: Dict):
             ],
         ),
         (
-            "Pitch Accuracy Performance",
+            "Pitch Accuracy",
             [
                 ("RMSE (Hz) ↓", lambda m: format_metric(m["pitch_accuracy"]["rmse"])),
                 (
@@ -412,7 +412,7 @@ def print_evaluation_results(metrics: Dict):
             ],
         ),
         (
-            "Combined Score",
+            "Overall",
             [
                 (
                     "Harmonic Mean ↑",
