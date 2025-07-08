@@ -63,7 +63,7 @@ python pitch_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
   - [RAPT](https://pysptk.readthedocs.io/en/latest/generated/pysptk.sptk.rapt.html) (SPTK implementation)
   - [pYIN](https://librosa.org/doc/main/generated/librosa.pyin.html) (librosa implementation)
   - [BasicPitch](https://github.com/spotify/basic-pitch)
-  - [SwiftF0](https://github.com/lars76/swift_f0)
+  - [SwiftF0](https://github.com/lars76/swift-f0)
 
 ## 🤝 Contributing
 
