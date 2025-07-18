@@ -4,6 +4,7 @@ from .mdb import PitchDatasetMDBStemSynth
 from .nsynth import PitchDatasetNSynth
 from .speechsynth import PitchDatasetSpeechSynth
 from .mir1k import PitchDatasetMIR1K
+from .vocadito import PitchDatasetVocadito
 from .noise import NoiseAugmentedDataset, CHiMeNoiseDataset
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "PitchDatasetNSynth",
     "PitchDatasetSpeechSynth",
     "PitchDatasetMIR1K",
+    "PitchDatasetVocadito",
     "NoiseAugmentedDataset",
     "CHiMeNoiseDataset",
 ]
@@ -23,6 +25,7 @@ _REGISTRY = {
     "MDBStemSynth": PitchDatasetMDBStemSynth,
     "SpeechSynth": PitchDatasetSpeechSynth,
     "MIR1K": PitchDatasetMIR1K,
+    "Vocadito": PitchDatasetVocadito,
 }
 
 

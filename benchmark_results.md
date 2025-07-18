@@ -300,6 +300,10 @@ python pitch_benchmark.py --dataset SpeechSynth --data-dir datasets/lightspeech_
 
 ## MIR-1K
 
+```bash
+python pitch_benchmark.py --dataset MIR1K --data-dir "MIR-1K" --fmin 65 --fmax 2093 --snr 10 --noise-dir "chime_home"
+```
+
 ### Voicing Detection
 
 | Algorithm  | Precision ↑ | Recall ↑ | F1 ↑  |
@@ -355,6 +359,68 @@ python pitch_benchmark.py --dataset SpeechSynth --data-dir datasets/lightspeech_
 | pYIN       | 89.4%           |
 | BasicPitch | 25.7%           |
 | SwiftF0    | **93.3%**           |
+
+## Vocadito
+
+```bash
+python pitch_benchmark.py --dataset Vocadito --data-dir vocadito --fmin 65 --fmax 2093 --snr 10 --noise-dir "chime_home"
+```
+
+### Voicing Detection
+
+| Algorithm     | Precision ↑ | Recall ↑ | F1 ↑   |
+|---------------|-------------|----------|--------|
+| PENN          | 65.6%       | **100.0%**   | 79.2%  |
+| Praat         | 88.8%       | 91.4%    | 90.1%  |
+| RAPT          | 89.2%       | 96.7%    | 92.8%  |
+| SWIPE         | 82.6%       | 93.4%    | 87.7%  |
+| TorchCREPE    | 82.4%       | 34.2%    | 48.3%  |
+| YAAPT         | 89.6%       | 97.5%    | **93.4%**  |
+| pYIN          | **92.6%**       | 73.8%    | 82.2%  |
+| BasicPitch    | 66.4%       | 87.1%    | 75.4%  |
+| SwiftF0       | 90.7%       | 91.2%    | 91.0%  |
+
+### Pitch Accuracy
+
+| Algorithm     | RMSE (Hz) ↓ | Cents Err (Δ¢) ↓ | RPA ↑  | RCA ↑  |
+|---------------|-------------|------------------|--------|--------|
+| PENN          | 58.12       | 201.53           | 71.0%  | 73.2%  |
+| Praat         | 60.79       | 77.77            | 91.2%  | 94.1%  |
+| RAPT          | 36.74       | 188.41           | 77.1%  | 78.6%  |
+| SWIPE         | 86.94       | 128.80           | 84.6%  | 88.4%  |
+| TorchCREPE    | 138.77      | 91.06            | 67.6%  | 67.9%  |
+| YAAPT         | 22.43       | 66.73            | 86.5%  | 88.1%  |
+| pYIN          | **14.45**       | **27.04**            | **95.2%**  | **95.4%**  |
+| BasicPitch    | 139.95      | 461.40           | 12.5%  | 13.9%  |
+| SwiftF0       | 19.51       | 34.54            | 91.2%  | 91.3%  |
+
+### Pitch Robustness
+
+| Algorithm     | Octave Err % ↓ | Gross Err % ↓ |
+|---------------|----------------|----------------|
+| PENN          | 9.6%           | 17.8%          |
+| Praat         | 4.4%           | 4.8%           |
+| RAPT          | 3.9%           | 5.4%           |
+| SWIPE         | 7.1%           | 7.6%           |
+| TorchCREPE    | 1.5%           | 6.1%           |
+| YAAPT         | 2.9%           | 3.7%           |
+| pYIN          | **0.8%**           | **1.1%**           |
+| BasicPitch    | 18.2%          | 65.5%          |
+| SwiftF0       | 0.9%           | 1.2%           |
+
+### Overall
+
+| Algorithm     | Harmonic Mean ↑ |
+|---------------|------------------|
+| PENN          | 57.2%            |
+| Praat         | 82.2%            |
+| RAPT          | 78.0%            |
+| SWIPE         | 72.7%            |
+| TorchCREPE    | 64.2%            |
+| YAAPT         | 86.0%            |
+| pYIN          | 89.8%            |
+| BasicPitch    | 13.1%            |
+| SwiftF0       | **92.1%**            |
 
 ## Speed Benchmark
 
