@@ -422,6 +422,68 @@ python pitch_benchmark.py --dataset Vocadito --data-dir vocadito --fmin 65 --fma
 | BasicPitch    | 13.1%            |
 | SwiftF0       | **92.1%**            |
 
+## Bach10-mf0-synth
+
+```bash
+python pitch_benchmark.py --dataset Bach10Synth --data-dir Bach10-mf0-synth --fmin 65 --fmax 2093  --snr 10 --noise-dir "chime_home" --snr 10 --noise-dir "chime_home"
+```
+
+### Voicing Detection
+
+| Algorithm     | Precision ↑ | Recall ↑ | F1 ↑   |
+|---------------|-------------|----------|--------|
+| PENN          | 91.7%       | **100.0%**   | 95.7%  |
+| Praat         | 95.4%       | 98.7%    | 97.0%  |
+| RAPT          | 95.3%       | 99.6%    | 97.4%  |
+| SWIPE         | 97.3%       | 87.9%    | 92.4%  |
+| TorchCREPE    | 98.5%       | 92.3%    | 95.3%  |
+| YAAPT         | 97.4%       | 98.3%    | **97.8%**  |
+| pYIN          | **99.3%**       | 84.7%    | 91.4%  |
+| BasicPitch    | 91.4%       | 85.8%    | 88.5%  |
+| SwiftF0       | 98.5%       | 91.1%    | 94.7%  |
+
+### Pitch Accuracy
+
+| Algorithm     | RMSE (Hz) ↓ | Cents Err (Δ¢) ↓ | RPA ↑  | RCA ↑  |
+|---------------|-------------|------------------|--------|--------|
+| PENN          | 124.04      | 338.05           | 74.4%  | 76.5%  |
+| Praat         | 93.06       | 158.54           | 87.6%  | 92.0%  |
+| RAPT          | 79.28       | 124.62           | 87.5%  | 90.6%  |
+| SWIPE         | 66.58       | 107.54           | 89.6%  | 93.6%  |
+| TorchCREPE    | **20.55**       | 37.77            | 86.6%  | 86.7%  |
+| YAAPT         | 126.88      | 337.88           | 71.7%  | 91.1%  |
+| pYIN          | 23.35       | **19.26**            | **97.7%**  | **98.1%**  |
+| BasicPitch    | 124.04      | 387.08           | 22.3%  | 24.0%  |
+| SwiftF0       | 48.46       | 25.71            | 97.2%  | 97.8%  |
+
+### Pitch Robustness
+
+| Algorithm     | Octave Err % ↓ | Gross Err % ↓ |
+|---------------|----------------|----------------|
+| PENN          | 15.4%          | 22.9%          |
+| Praat         | 9.0%           | 10.0%          |
+| RAPT          | 5.4%           | 7.0%           |
+| SWIPE         | 7.1%           | 7.7%           |
+| TorchCREPE    | **0.6%**           | 4.5%           |
+| YAAPT         | 23.4%          | 24.6%          |
+| pYIN          | **0.6%**           | **0.7%**           |
+| BasicPitch    | 14.4%          | 57.6%          |
+| SwiftF0       | 0.9%           | 1.1%           |
+
+### Overall
+
+| Algorithm     | Harmonic Mean ↑ |
+|---------------|------------------|
+| PENN          | 45.4%            |
+| Praat         | 69.1%            |
+| RAPT          | 78.8%            |
+| SWIPE         | 74.8%            |
+| TorchCREPE    | 90.3%            |
+| YAAPT         | 31.2%            |
+| pYIN          | 94.4%            |
+| BasicPitch    | 19.4%            |
+| SwiftF0       | **94.6%**            |
+
 ## Speed Benchmark
 
 ```bash
