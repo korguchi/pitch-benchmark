@@ -37,7 +37,15 @@ class NoiseAugmentedDataset(torch.utils.data.Dataset):
         self.snr_db = snr_db
         self.noise_probability = noise_probability
         self.enable_caching = enable_caching
-        self.audio_cache: Dict[str, torch.Tensor] = {}
+
+        # Caches for deterministic noise generation
+        self.audio_cache: Dict[str, torch.Tensor] = {}  # Cached noise files
+        self.noise_decisions: Dict[
+            int, bool
+        ] = {}  # Noise application decisions per index
+        self.noise_audio_cache: Dict[
+            int, torch.Tensor
+        ] = {}  # Final noisy audio per index
 
         # Get target sample rate from base dataset
         self.target_sample_rate = base_dataset.sample_rate
@@ -73,6 +81,7 @@ class NoiseAugmentedDataset(torch.utils.data.Dataset):
             raise ValueError(f"No audio files found in {noise_dir}")
 
         self.noise_sample_rate = noise_sample_rate
+        print(f"Loaded {len(self.noise_files)} noise files")
 
     def __len__(self) -> int:
         """Return length of the underlying dataset."""
@@ -80,29 +89,41 @@ class NoiseAugmentedDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, Union[torch.Tensor, Path]]:
         """
-        Get item from base dataset and optionally apply noise augmentation.
-
-        Returns:
-            Dict containing 'audio', 'pitch', 'periodicity', and optionally other keys
-            from the base dataset
+        Get item from base dataset and optionally apply deterministic noise.
         """
+        # Return cached version if available
+        if idx in self.noise_audio_cache:
+            return self.noise_audio_cache[idx]
+
         # Get original sample from base dataset
         sample = self.base_dataset[idx]
 
-        # Apply noise augmentation with given probability
-        if random.random() < self.noise_probability:
-            sample["audio"] = self._add_noise(sample["audio"])
+        # Make deterministic noise decision based on index
+        if idx not in self.noise_decisions:
+            # Create index-specific RNG for reproducible decisions
+            rng = random.Random(idx)
+            self.noise_decisions[idx] = rng.random() < self.noise_probability
+
+        if self.noise_decisions[idx]:
+            # Apply deterministic noise
+            noisy_audio = self._add_deterministic_noise(sample["audio"], idx)
+            # Create new sample with noisy audio
+            noisy_sample = {**sample, "audio": noisy_audio}
+            # Cache for future access
+            self.noise_audio_cache[idx] = noisy_sample
+            return noisy_sample
+
         return sample
 
-    def _add_noise(self, audio: torch.Tensor) -> torch.Tensor:
-        """Add noise to audio signal."""
+    def _add_deterministic_noise(self, audio: torch.Tensor, idx: int) -> torch.Tensor:
+        """Add deterministic noise using index-based generation"""
         audio_length = audio.shape[-1]
 
         # Generate noise based on source type
         if self.noise_type == "white":
-            noise = self._generate_white_noise(audio_length)
+            noise = self._generate_deterministic_white_noise(audio_length, idx)
         else:
-            noise = self._generate_file_noise(audio_length)
+            noise = self._generate_deterministic_file_noise(audio_length, idx)
 
         # Move noise to same device as audio
         noise = noise.to(audio.device)
@@ -140,17 +161,26 @@ class NoiseAugmentedDataset(torch.utils.data.Dataset):
 
         return noisy_audio
 
-    def _generate_white_noise(self, length: int) -> torch.Tensor:
-        """Generate white noise."""
+    def _generate_deterministic_white_noise(
+        self, length: int, idx: int
+    ) -> torch.Tensor:
+        """White noise with index-based seeding"""
+        # Seed numpy (used by torch) with index-derived value
+        seed = hash(idx) % 2**32
+        torch.manual_seed(seed)
         return torch.randn(length)
 
-    def _generate_file_noise(self, length: int) -> torch.Tensor:
-        """Generate noise from random audio file."""
-        # Randomly select a noise file
-        noise_path = random.choice(self.noise_files)
+    def _generate_deterministic_file_noise(self, length: int, idx: int) -> torch.Tensor:
+        """File-based noise with index-based deterministic selection"""
+        # Create index-specific RNG
+        rng = random.Random(idx)
+
+        # 1. Select file deterministically
+        noise_idx = rng.randint(0, len(self.noise_files) - 1)
+        noise_path = self.noise_files[noise_idx]
         noise_filename = noise_path.name
 
-        # Check cache first
+        # 2. Load with caching
         if self.enable_caching and noise_filename in self.audio_cache:
             noise_audio = self.audio_cache[noise_filename]
         else:
@@ -176,23 +206,31 @@ class NoiseAugmentedDataset(torch.utils.data.Dataset):
                 warnings.warn(f"Could not load noise file {noise_path}: {e}")
                 return torch.zeros(1, length)  # Return with channel dimension
 
-        # Handle length mismatch
+        # 3. Handle length mismatch
         current_length = noise_audio.shape[-1]
 
         if current_length < length:
             # Repeat the noise if it's shorter than needed
             repeats = (length // current_length) + 1
             noise_audio = noise_audio.repeat(1, repeats)
+            current_length = noise_audio.shape[-1]
 
-        # Crop to desired length
-        if noise_audio.shape[-1] > length:
-            # Random crop for variety
-            start_idx = random.randint(0, noise_audio.shape[-1] - length)
+        # 4. Deterministic cropping
+        if current_length > length:
+            max_start = current_length - length
+            start_idx = rng.randint(0, max_start)  # Deterministic based on idx
             noise_audio = noise_audio[:, start_idx : start_idx + length]
-        elif noise_audio.shape[-1] < length:
-            noise_audio = noise_audio[:, :length]
+        elif current_length < length:
+            # Pad with zeros if still too short
+            padding = length - current_length
+            noise_audio = torch.nn.functional.pad(noise_audio, (0, padding))
 
         return noise_audio
+
+    def clear_caches(self):
+        """Clear all noise caches"""
+        self.noise_decisions = {}
+        self.noise_audio_cache = {}
 
 
 class CHiMeNoiseDataset(NoiseAugmentedDataset):

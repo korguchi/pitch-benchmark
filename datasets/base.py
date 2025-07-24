@@ -2,7 +2,8 @@ import torch
 from pathlib import Path
 import torchaudio
 import torch.nn.functional as F
-from typing import Dict, Tuple, Union
+import numpy as np
+from typing import Dict, Tuple, Union, Optional, List
 from abc import ABC, abstractmethod
 
 
@@ -93,25 +94,39 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         return audio.clamp(-1.0, 1.0)
 
     def _validate_pitch(
-        self, pitch: torch.Tensor, periodicity: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self,
+        pitch: torch.Tensor,
+        periodicity: torch.Tensor,
+        notes: Optional[List[Dict]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[List[Dict]]]:
         """
-        Validates and processes pitch and periodicity values.
+        Validates and processes pitch, periodicity values, and optionally notes.
 
         By default, pitch values outside the [fmin, fmax] range are preserved
         but their corresponding periodicity is set to zero. This approach maintains
         data integrity while indicating that pitch detection is unreliable outside
         the specified frequency range, avoiding false pitch information.
 
+        The same frequency constraints are applied to transcription notes to ensure
+        consistency with the pitch algorithm's operational range.
+
         Args:
             pitch (torch.Tensor): Pitch values
             periodicity (torch.Tensor): Periodicity values
+            notes (Optional[List[Dict]]): Musical notes with 'start', 'end', 'midi_pitch'
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Processed pitch and periodicity values.
-                If clip_pitch=True, pitch values are clipped to [fmin, fmax] range.
-                If clip_pitch=False, out-of-range pitch values have periodicity set to 0.
+            Tuple containing:
+            - pitch (torch.Tensor): Processed pitch values
+            - periodicity (torch.Tensor): Processed periodicity values
+            - notes (Optional[List[Dict]]): Processed notes (if provided)
+
+            If clip_pitch=True, pitch values are clipped to [fmin, fmax] range and
+            note frequencies are similarly clipped.
+            If clip_pitch=False, out-of-range pitch values have periodicity set to 0
+            and out-of-range notes are excluded.
         """
+        # Validate pitch and periodicity shapes
         if pitch.shape != periodicity.shape:
             raise ValueError(
                 f"Pitch and periodicity shapes must match: {pitch.shape} vs {periodicity.shape}"
@@ -126,12 +141,41 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         if self.clip_pitch:
             # Clip pitch values to valid range
             pitch = torch.clamp(pitch, self.fmin, self.fmax)
+
+            # Apply same clipping logic to notes if provided
+            if notes is not None:
+                processed_notes = []
+                for note in notes:
+                    midi_pitch = note["midi_pitch"]
+                    freq_hz = 440.0 * (2 ** ((midi_pitch - 69) / 12))
+
+                    # Clip frequency to algorithm's operational range
+                    freq_hz_clipped = max(self.fmin, min(freq_hz, self.fmax))
+                    midi_pitch_clipped = 69 + 12 * np.log2(freq_hz_clipped / 440.0)
+
+                    processed_note = note.copy()
+                    processed_note["midi_pitch"] = float(midi_pitch_clipped)
+                    processed_notes.append(processed_note)
+                notes = processed_notes
         else:
             # Preserve pitch but zero periodicity for out-of-range values
             out_of_range_mask = (pitch < self.fmin) | (pitch > self.fmax)
             periodicity = periodicity * (~out_of_range_mask).float()
 
-        return pitch, periodicity.bool()
+            # Apply same filtering logic to notes if provided
+            if notes is not None:
+                processed_notes = []
+                for note in notes:
+                    midi_pitch = note["midi_pitch"]
+                    freq_hz = 440.0 * (2 ** ((midi_pitch - 69) / 12))
+
+                    # Only include notes within algorithm's operational range
+                    if self.fmin <= freq_hz <= self.fmax:
+                        processed_notes.append(note.copy())
+                    # Notes outside range are excluded (algorithm can't detect them)
+                notes = processed_notes
+
+        return pitch, periodicity.bool(), notes
 
     def process_sample(
         self,
@@ -139,18 +183,23 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         pitch: torch.Tensor,
         periodicity: torch.Tensor,
         orig_sr: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        notes: Optional[List[Dict]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[List[Dict]]]:
         """
-        Processes a single audio sample with its corresponding pitch and periodicity.
+        Processes a single audio sample with its corresponding pitch, periodicity, and (optionally) notes.
+
+        Applies consistent frequency constraints to both F0 estimates and transcription notes to ensure
+        they represent what the pitch algorithm can actually detect.
 
         Args:
             audio (torch.Tensor): Audio waveform
             pitch (torch.Tensor): Pitch values
             periodicity (torch.Tensor): Periodicity values
             orig_sr (int): Original sample rate of the audio
+            notes (Optional[List[Dict]]): Musical notes with 'start', 'end', 'midi_pitch'
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Processed audio, pitch, and periodicity
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[List[Dict]]]: Processed audio, pitch, periodicity and notes
         """
         # Ensure consistent dimensions
         audio = audio.squeeze()
@@ -183,9 +232,12 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
             ).squeeze()
 
         # Validate pitch and periodicity
-        pitch, periodicity = self._validate_pitch(pitch, periodicity)
+        pitch, periodicity, notes = self._validate_pitch(pitch, periodicity, notes)
 
-        return audio.squeeze(0), pitch, periodicity
+        if notes is None:
+            return audio.squeeze(0), pitch, periodicity
+        else:
+            return audio.squeeze(0), pitch, periodicity, notes
 
     @abstractmethod
     def __len__(self) -> int:

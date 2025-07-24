@@ -43,6 +43,11 @@ Run pitch detection benchmark:
 python pitch_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
 ```
 
+**[Experimental]** Run music transcription benchmark:
+```bash
+python note_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
+```
+
 ## 🛠️ Features
 
 - Comprehensive evaluation across various datasets:

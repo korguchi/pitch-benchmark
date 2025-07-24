@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict
 from abc import ABC, abstractmethod
 
 
@@ -61,6 +61,141 @@ class PitchAlgorithm(ABC):
 
         periodicity = np.clip(periodicity, 0.0, 1.0)
         return pitch, periodicity
+
+    def notes_from_pitch_contour(
+        self,
+        pitch_contour: np.ndarray,
+        voicing_contour: np.ndarray,
+        split_semitone_threshold: float = 0.8,
+        min_note_duration: float = 0.05,
+        unvoiced_grace_period: float = 0.02,
+    ) -> List[Dict[str, float]]:
+        """
+        Segments a pitch contour into discrete musical notes.
+
+        Splits the contour when pitch deviates by more than split_semitone_threshold
+        semitones from the current note's median pitch. Includes a grace period for
+        unvoiced frames to avoid premature note termination.
+
+        Args:
+            pitch_contour: Array of fundamental frequencies in Hz
+            voicing_contour: Array of voicing probabilities (0 to 1)
+            split_semitone_threshold: Pitch difference in semitones to trigger a new
+                note segment. Recommended range: 0.6-1.2
+            min_note_duration: Minimum duration in seconds for a valid note
+            unvoiced_grace_period: Maximum duration in seconds of unvoiced segments
+                that are still considered part of the current note
+
+        Returns:
+            List of note dictionaries with 'start', 'end', and 'midi_pitch' keys
+        """
+        frame_period = self.hop_size / self.sample_rate
+        notes = []
+        current_note_segment = None
+        unvoiced_frames_count = 0
+
+        # Pre-compute valid voiced frames mask
+        valid_voiced_frames = (
+            (voicing_contour > 0)
+            & (pitch_contour >= self.fmin)
+            & (pitch_contour <= self.fmax)
+        )
+
+        # Convert valid pitch values to MIDI semitones (vectorized operation)
+        midi_contour = np.full_like(pitch_contour, np.nan)
+        valid_indices = np.where(valid_voiced_frames)[0]
+        if len(valid_indices) > 0:
+            midi_contour[valid_indices] = 69 + 12 * np.log2(
+                pitch_contour[valid_indices] / 440.0
+            )
+
+        for i, is_voiced in enumerate(valid_voiced_frames):
+            t = i * frame_period
+
+            if is_voiced:
+                unvoiced_frames_count = 0
+                midi_pitch = midi_contour[i]
+
+                if current_note_segment is None:
+                    # Start new note segment
+                    current_note_segment = {
+                        "start": t,
+                        "end": t + frame_period,
+                        "samples": [midi_pitch],
+                    }
+                else:
+                    # Check if pitch deviation exceeds threshold
+                    current_median = np.median(current_note_segment["samples"])
+                    pitch_deviation = abs(midi_pitch - current_median)
+
+                    if pitch_deviation >= split_semitone_threshold:
+                        # Finalize current note and start new one
+                        notes.append(current_note_segment)
+                        current_note_segment = {
+                            "start": t,
+                            "end": t + frame_period,
+                            "samples": [midi_pitch],
+                        }
+                    else:
+                        # Continue current note
+                        current_note_segment["samples"].append(midi_pitch)
+                        current_note_segment["end"] = t + frame_period
+
+            else:  # Unvoiced frame
+                if current_note_segment is not None:
+                    unvoiced_frames_count += 1
+                    unvoiced_duration = unvoiced_frames_count * frame_period
+
+                    if unvoiced_duration >= unvoiced_grace_period:
+                        # Grace period exceeded - finalize current note
+                        notes.append(current_note_segment)
+                        current_note_segment = None
+                    else:
+                        # Within grace period - extend note duration
+                        current_note_segment["end"] = t + frame_period
+
+        # Finalize last note segment if it exists
+        if current_note_segment is not None:
+            notes.append(current_note_segment)
+
+        if not notes:
+            return []
+
+        # Filter by duration and compute final MIDI pitches
+        processed_notes = []
+        for segment in notes:
+            duration = segment["end"] - segment["start"]
+            if duration >= min_note_duration and segment["samples"]:
+                median_pitch = np.median(segment["samples"])
+                processed_notes.append(
+                    {
+                        "start": segment["start"],
+                        "end": segment["end"],
+                        "midi_pitch": round(median_pitch),  # int() call is redundant
+                    }
+                )
+
+        if not processed_notes:
+            return []
+
+        # Merge adjacent notes with identical MIDI pitch
+        final_notes = [processed_notes[0]]
+        epsilon = 1e-9  # For floating-point precision
+
+        for current_note in processed_notes[1:]:
+            previous_note = final_notes[-1]
+            gap = current_note["start"] - previous_note["end"]
+
+            # Merge if notes are adjacent and have same pitch
+            if (
+                gap <= frame_period + epsilon
+                and previous_note["midi_pitch"] == current_note["midi_pitch"]
+            ):
+                previous_note["end"] = current_note["end"]
+            else:
+                final_notes.append(current_note)
+
+        return final_notes
 
     @abstractmethod
     def extract_pitch(
@@ -140,14 +275,16 @@ class ContinuousPitchAlgorithm(PitchAlgorithm):
 
     def extract_pitch(
         self, audio: np.ndarray, threshold: Optional[float] = None
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, List[Dict[str, float]]]:
         """Extract pitch and binary voicing information."""
         if threshold is None:
             threshold = self._get_default_threshold()
 
         pitch, periodicity = self.extract_continuous_periodicity(audio)
         voicing = (periodicity >= threshold).astype(bool)
-        return pitch, voicing
+        notes = self.notes_from_pitch_contour(pitch, voicing)
+
+        return pitch, voicing, notes
 
     def _get_default_threshold(self) -> float:
         """Get the default threshold for this algorithm. Override in subclasses."""
@@ -177,7 +314,7 @@ class ThresholdPitchAlgorithm(PitchAlgorithm):
 
     def extract_pitch(
         self, audio: np.ndarray, threshold: Optional[float] = None
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, List[Dict[str, float]]]:
         """Extract pitch and binary voicing information."""
         if threshold is None:
             threshold = self._get_default_threshold()
@@ -189,5 +326,8 @@ class ThresholdPitchAlgorithm(PitchAlgorithm):
         target_times = self._compute_target_times(len(audio))
         aligned_pitch = self._align_to_grid(times, pitch, target_times)
         aligned_periodicity = self._align_to_grid(times, periodicity, target_times)
+        notes = self.notes_from_pitch_contour(
+            aligned_pitch, aligned_periodicity.astype(bool)
+        )
 
-        return aligned_pitch, aligned_periodicity.astype(bool)
+        return aligned_pitch, aligned_periodicity.astype(bool), notes

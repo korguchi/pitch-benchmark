@@ -6,7 +6,7 @@ from tqdm import tqdm
 from torch.utils.data import Dataset, Subset
 import torch
 from algorithms import get_algorithm, list_algorithms
-from datasets import get_dataset, list_datasets, CHiMeNoiseDataset
+from datasets import get_pitch_dataset, list_pitch_datasets, CHiMeNoiseDataset
 
 
 def optimize_thresholds(
@@ -65,7 +65,7 @@ def optimize_thresholds(
                     audio = sample["audio"].numpy()
                     true_voicing = sample["periodicity"].numpy()
 
-                    _, pred_voicing = algo.extract_pitch(audio, threshold)
+                    _, pred_voicing, _ = algo.extract_pitch(audio, threshold)
                     metrics = evaluate_voicing_detection(pred_voicing, true_voicing)
                     f1_scores.append(metrics["f1"])
 
@@ -249,7 +249,7 @@ def evaluate_pitch_algorithms(
                 if not true_voicing.any():
                     continue
 
-                pred_pitch, pred_voicing = algo.extract_pitch(audio, threshold)
+                pred_pitch, pred_voicing, _ = algo.extract_pitch(audio, threshold)
 
                 # Accumulate all predictions and ground truth
                 all_pred_voicing.append(pred_voicing)
@@ -465,7 +465,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        choices=list_datasets(),
+        choices=list_pitch_datasets(),
         help="Dataset to evaluate on",
     )
     required.add_argument(
@@ -520,7 +520,7 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     # Initialize base dataset
-    dataset_class = get_dataset(args.dataset)
+    dataset_class = get_pitch_dataset(args.dataset)
     base_dataset = dataset_class(
         root_dir=args.data_dir,
         sample_rate=args.sample_rate,
