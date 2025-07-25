@@ -5,6 +5,7 @@ from typing import List, Dict, Tuple
 from tqdm import tqdm
 from torch.utils.data import Dataset, Subset
 import torch
+from scipy.ndimage import find_objects, label
 from algorithms import get_algorithm, list_algorithms
 from datasets import get_pitch_dataset, list_pitch_datasets, CHiMeNoiseDataset
 
@@ -203,49 +204,110 @@ def evaluate_pitch_smoothness(
     pitch_pred: np.ndarray, pred_voicing: np.ndarray, true_voicing: np.ndarray
 ) -> Dict[str, float]:
     """
-    Compute two key metrics:
-
+    Compute two key metrics of pitch-contour quality:
     1. relative_smoothness: Frame-to-frame smoothness of the predicted pitch (lower is smoother),
        defined as the coefficient of variation of relative pitch changes across consecutive voiced frames.
-
-    2. continuity_breaks: Proportion of ground-truth voiced frames missed by the prediction (lower is better),
-       capturing gaps where predicted voicing drops out.
+    2. continuity_breaks: Proportion of ground-truth voiced segments that contain at least one interruption
+       (predicted unvoiced frame) within them (lower is better), capturing breaks in continuous pitch runs.
 
     Args:
         pitch_pred (np.ndarray): Predicted pitch (Hz) of shape (T,).
-        pred_voicing (np.ndarray): Boolean mask (shape (T,)) indicating predicted voiced frames.
-        true_voicing (np.ndarray): Boolean mask (shape (T,)) indicating ground-truth voiced frames.
+        pred_voicing (np.ndarray): Boolean mask of shape (T,) indicating predicted voiced frames.
+        true_voicing (np.ndarray): Boolean mask of shape (T,) indicating ground-truth voiced frames.
 
     Returns:
         Dict[str, float]: A dict with keys:
             - "relative_smoothness": float
             - "continuity_breaks": float
     """
-    # Initialize metrics
+    # Initialize metrics as NaN (will be overridden if computable)
     relative_smoothness = np.nan
     continuity_breaks = np.nan
 
-    # Identify indices of consecutive voiced frames
+    # Relative Smoothness Calculation
+    # Find indices where predicted voicing is True
     voiced_idx = np.where(pred_voicing)[0]
-    if len(voiced_idx) >= 2:
-        # Mask for directly consecutive frames
-        is_consec = np.diff(voiced_idx) == 1
-        if np.any(is_consec):
-            starts = pitch_pred[voiced_idx[:-1]][is_consec]
-            ends = pitch_pred[voiced_idx[1:]][is_consec]
-            valid = (starts > 0) & (ends > 0)
-            if np.any(valid):
-                rel_changes = np.abs(ends[valid] - starts[valid]) / starts[valid]
-                mean_chg = np.mean(rel_changes)
-                std_chg = np.std(rel_changes)
-                # Coefficient of variation
-                relative_smoothness = std_chg / (mean_chg + 1e-8)
 
-    # Fraction of true-voiced frames predicted as unvoiced
-    total_true = np.sum(true_voicing)
-    if total_true > 0:
-        missed = np.sum(true_voicing & ~pred_voicing)
-        continuity_breaks = missed / total_true
+    # Need at least two consecutive voiced frames to calculate pitch changes
+    if len(voiced_idx) >= 2:
+        # Find where consecutive voiced frames occur (adjacent in time)
+        consecutive_mask = np.diff(voiced_idx) == 1
+
+        # Get the indices of the 'start' and 'end' frames of these consecutive pairs
+        starts_consec_idx = voiced_idx[:-1][consecutive_mask]
+        ends_consec_idx = voiced_idx[1:][consecutive_mask]
+
+        # Get the actual pitch values for these consecutive pairs
+        pitch_starts = pitch_pred[starts_consec_idx]
+        pitch_ends = pitch_pred[ends_consec_idx]
+
+        # Filter for valid pitch values (e.g., non-zero, positive Hz)
+        valid_pairs_mask = (pitch_starts > 0) & (pitch_ends > 0)
+
+        if np.any(valid_pairs_mask):
+            # Apply the valid_pairs_mask to get only the relevant pitch values
+            filtered_pitch_starts = pitch_starts[valid_pairs_mask]
+            filtered_pitch_ends = pitch_ends[valid_pairs_mask]
+
+            # Calculate relative pitch changes (absolute difference divided by start pitch)
+            # Add a small epsilon (1e-8) to the denominator to prevent division by zero for individual changes
+            rel_changes = np.abs(filtered_pitch_ends - filtered_pitch_starts) / (
+                filtered_pitch_starts + 1e-8
+            )
+
+            # Compute mean and standard deviation of these relative changes
+            mean_chg = np.mean(rel_changes)
+            std_chg = np.std(rel_changes)
+
+            # Compute relative smoothness: coefficient of variation (std_dev / mean)
+            # Handle near-zero mean cases robustly to avoid division by zero or inflated values.
+            # If mean is very small but std is also very small, it indicates high smoothness (0.0).
+            if mean_chg > 1e-12:  # Use a tight tolerance for non-zero mean
+                relative_smoothness = std_chg / mean_chg
+            else:
+                # If mean change is near zero, smoothness is perfect only if std change is also near zero.
+                relative_smoothness = 0.0 if std_chg < 1e-8 else np.nan
+
+    # Continuity Breaks Calculation
+    # Label contiguous ground-truth voiced segments (e.g., [F,T,T,F] -> [0,1,1,0])
+    # The .astype(int) is implicitly handled by label for boolean or numeric arrays.
+    labeled_segments, num_segments = label(true_voicing)
+
+    # find_objects returns a list of tuples, each containing a slice object for 1D arrays
+    gt_segments_tuples = find_objects(labeled_segments)
+
+    break_count = 0
+    total_relevant_segments = (
+        0  # Counter for ground-truth segments that meet length criterion
+    )
+
+    # Iterate through each identified ground-truth voiced segment
+    for seg_tuple in gt_segments_tuples:
+        # Extract the actual slice object from the tuple
+        actual_slice = seg_tuple[0]
+
+        # Calculate the length of the current ground-truth segment
+        segment_length = actual_slice.stop - actual_slice.start
+
+        # As per requirement, only consider segments with more than one frame
+        # to identify "breaks in continuous pitch runs".
+        if segment_length > 1:
+            total_relevant_segments += 1
+
+            # Extract the predicted voicing for the current ground-truth segment's frames
+            predicted_voicing_in_gt_segment = pred_voicing[actual_slice]
+
+            # Check if any predicted frame within this ground-truth segment is unvoiced (False)
+            if not np.all(predicted_voicing_in_gt_segment):
+                break_count += 1
+
+    # Calculate the proportion of broken segments
+    if total_relevant_segments > 0:
+        continuity_breaks = break_count / total_relevant_segments
+    else:
+        # If no ground-truth segments met the length criterion, continuity_breaks remains NaN.
+        # This implies no relevant segments to evaluate for breaks.
+        continuity_breaks = np.nan
 
     return {
         "relative_smoothness": float(relative_smoothness),
@@ -525,7 +587,7 @@ def print_evaluation_results(metrics: Dict):
             try:
                 values = [func(algo_metrics) for _, func in metrics_info]
                 print(format_str.format(algo_display, *values))
-            except (KeyError, TypeError) as e:
+            except (KeyError, TypeError):
                 error_values = ["Error".center(16)] * len(metrics_info)
                 print(format_str.format(algo_display, *error_values))
                 # print(f"  Warning: Could not format results for {algo_name}: {e}")
