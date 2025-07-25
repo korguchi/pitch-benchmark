@@ -199,6 +199,60 @@ def evaluate_pitch_accuracy(
     }
 
 
+def evaluate_pitch_smoothness(
+    pitch_pred: np.ndarray, pred_voicing: np.ndarray, true_voicing: np.ndarray
+) -> Dict[str, float]:
+    """
+    Compute two key metrics:
+
+    1. relative_smoothness: Frame-to-frame smoothness of the predicted pitch (lower is smoother),
+       defined as the coefficient of variation of relative pitch changes across consecutive voiced frames.
+
+    2. continuity_breaks: Proportion of ground-truth voiced frames missed by the prediction (lower is better),
+       capturing gaps where predicted voicing drops out.
+
+    Args:
+        pitch_pred (np.ndarray): Predicted pitch (Hz) of shape (T,).
+        pred_voicing (np.ndarray): Boolean mask (shape (T,)) indicating predicted voiced frames.
+        true_voicing (np.ndarray): Boolean mask (shape (T,)) indicating ground-truth voiced frames.
+
+    Returns:
+        Dict[str, float]: A dict with keys:
+            - "relative_smoothness": float
+            - "continuity_breaks": float
+    """
+    # Initialize metrics
+    relative_smoothness = np.nan
+    continuity_breaks = np.nan
+
+    # Identify indices of consecutive voiced frames
+    voiced_idx = np.where(pred_voicing)[0]
+    if len(voiced_idx) >= 2:
+        # Mask for directly consecutive frames
+        is_consec = np.diff(voiced_idx) == 1
+        if np.any(is_consec):
+            starts = pitch_pred[voiced_idx[:-1]][is_consec]
+            ends = pitch_pred[voiced_idx[1:]][is_consec]
+            valid = (starts > 0) & (ends > 0)
+            if np.any(valid):
+                rel_changes = np.abs(ends[valid] - starts[valid]) / starts[valid]
+                mean_chg = np.mean(rel_changes)
+                std_chg = np.std(rel_changes)
+                # Coefficient of variation
+                relative_smoothness = std_chg / (mean_chg + 1e-8)
+
+    # Fraction of true-voiced frames predicted as unvoiced
+    total_true = np.sum(true_voicing)
+    if total_true > 0:
+        missed = np.sum(true_voicing & ~pred_voicing)
+        continuity_breaks = missed / total_true
+
+    return {
+        "relative_smoothness": float(relative_smoothness),
+        "continuity_breaks": float(continuity_breaks),
+    }
+
+
 def evaluate_pitch_algorithms(
     dataset: Dataset,
     fmin: int,
@@ -227,12 +281,11 @@ def evaluate_pitch_algorithms(
             fmax=fmax,
         )
 
-        # Global accumulators for all predictions and ground truth
-        all_pred_voicing = []
-        all_true_voicing = []
-        all_pred_pitch = []
-        all_true_pitch = []
-        all_voiced_mask = []  # Combined mask for voiced regions
+        # Accumulators for all files
+        all_pred_voicing, all_true_voicing = [], []
+        all_pred_pitch, all_true_pitch = [], []
+        all_voiced_mask = []
+        all_smoothness_metrics = []
 
         for idx in tqdm(
             range(len(dataset)), desc=f"Processing {algo_name}", leave=False
@@ -251,70 +304,25 @@ def evaluate_pitch_algorithms(
 
                 pred_pitch, pred_voicing, _ = algo.extract_pitch(audio, threshold)
 
-                # Accumulate all predictions and ground truth
+                # Accumulate data for global metrics
                 all_pred_voicing.append(pred_voicing)
                 all_true_voicing.append(true_voicing)
                 all_pred_pitch.append(pred_pitch)
                 all_true_pitch.append(true_pitch)
                 all_voiced_mask.append(pred_voicing & true_voicing)
 
+                # Calculate and accumulate smoothness metrics per file
+                smoothness_metrics = evaluate_pitch_smoothness(
+                    pred_pitch, pred_voicing, true_voicing
+                )
+                all_smoothness_metrics.append(smoothness_metrics)
+
             except Exception as e:
                 print(f"Error processing file {idx} with {algo_name}: {str(e)}")
                 continue
 
-        # Concatenate all arrays for global evaluation
-        if all_pred_voicing:  # Check if we have any valid data
-            global_pred_voicing = np.concatenate(all_pred_voicing)
-            global_true_voicing = np.concatenate(all_true_voicing)
-            global_pred_pitch = np.concatenate(all_pred_pitch)
-            global_true_pitch = np.concatenate(all_true_pitch)
-            global_voiced_mask = np.concatenate(all_voiced_mask)
-
-            voicing_metrics = evaluate_voicing_detection(
-                global_pred_voicing, global_true_voicing
-            )
-            pitch_metrics = evaluate_pitch_accuracy(
-                global_pred_pitch, global_true_pitch, global_voiced_mask
-            )
-
-            # Calculate enhanced harmonic mean (6-component)
-            rpa = pitch_metrics["rpa"]
-            cents_error = pitch_metrics["cents_error"]
-            octave_error_rate = pitch_metrics["octave_error_rate"]
-            gross_error_rate = pitch_metrics["gross_error_rate"]
-            voicing_recall = voicing_metrics["recall"]
-            voicing_precision = voicing_metrics["precision"]
-
-            # Transform error rates to accuracy scores using exponential decay
-            cents_accuracy = np.exp(-cents_error / 500.0)
-            octave_accuracy = np.exp(-octave_error_rate * 10.0)
-            gross_error_accuracy = np.exp(-gross_error_rate * 5.0)
-
-            # Collect all six components for harmonic mean calculation
-            components = [
-                rpa,  # Raw pitch accuracy (frames with <50¢ error)
-                cents_accuracy,  # Fine-grained pitch precision
-                voicing_recall,  # Voiced segment detection completeness
-                voicing_precision,  # Voiced segment detection accuracy
-                octave_accuracy,  # Octave error robustness
-                gross_error_accuracy,  # Overall tracking stability
-            ]
-
-            # Compute 6-component harmonic mean with safety check
-            if any(component <= 0 for component in components):
-                combined_score = 0.0
-            else:
-                combined_score = 6.0 / sum(1.0 / component for component in components)
-
-            results[algo_name] = {
-                "voicing_detection": voicing_metrics,
-                "pitch_accuracy": pitch_metrics,
-                "combined_score": combined_score,
-                "num_files_processed": len(all_pred_voicing),
-                "total_frames": len(global_pred_voicing),
-            }
-        else:
-            # Handle case where no valid files were processed
+        # If no files were processed, fill with NaNs
+        if not all_pred_voicing:
             results[algo_name] = {
                 "voicing_detection": {
                     "f1": np.nan,
@@ -329,10 +337,71 @@ def evaluate_pitch_algorithms(
                     "octave_error_rate": np.nan,
                     "gross_error_rate": np.nan,
                 },
+                "smoothness_metrics": {
+                    "relative_smoothness": np.nan,
+                    "continuity_breaks": np.nan,
+                },
                 "combined_score": np.nan,
                 "num_files_processed": 0,
                 "total_frames": 0,
             }
+            continue
+
+        # Concatenate all arrays for global evaluation
+        global_pred_voicing = np.concatenate(all_pred_voicing)
+        global_true_voicing = np.concatenate(all_true_voicing)
+        global_pred_pitch = np.concatenate(all_pred_pitch)
+        global_true_pitch = np.concatenate(all_true_pitch)
+        global_voiced_mask = np.concatenate(all_voiced_mask)
+
+        # Calculate standard metrics
+        voicing_metrics = evaluate_voicing_detection(
+            global_pred_voicing, global_true_voicing
+        )
+        pitch_metrics = evaluate_pitch_accuracy(
+            global_pred_pitch, global_true_pitch, global_voiced_mask
+        )
+
+        # Aggregate smoothness metrics by taking the mean of non-NaN values
+        smoothness_aggregated = {}
+        if all_smoothness_metrics:
+            for key in all_smoothness_metrics[0].keys():
+                values = [
+                    m[key] for m in all_smoothness_metrics if m and not np.isnan(m[key])
+                ]
+                smoothness_aggregated[key] = np.mean(values) if values else np.nan
+
+        # Calculate combined score
+        components = [
+            pitch_metrics.get("rpa", 0),
+            np.exp(-pitch_metrics.get("cents_error", 500) / 500.0),  # Cents accuracy
+            voicing_metrics.get("recall", 0),
+            voicing_metrics.get("precision", 0),
+            np.exp(
+                -pitch_metrics.get("octave_error_rate", 1) * 10.0
+            ),  # Octave accuracy
+            np.exp(
+                -pitch_metrics.get("gross_error_rate", 1) * 5.0
+            ),  # Gross error accuracy
+        ]
+
+        # Prevent division by zero if a component is zero or NaN
+        valid_components = [c for c in components if c and c > 0 and not np.isnan(c)]
+        if not valid_components:
+            combined_score = 0.0
+        else:
+            combined_score = len(valid_components) / sum(
+                1.0 / c for c in valid_components
+            )
+
+        results[algo_name] = {
+            "voicing_detection": voicing_metrics,
+            "pitch_accuracy": pitch_metrics,
+            "smoothness_metrics": smoothness_aggregated,
+            "combined_score": combined_score,
+            "num_files_processed": len(all_pred_voicing),
+            "total_frames": len(global_pred_voicing),
+        }
 
     return results
 
@@ -342,7 +411,7 @@ def print_evaluation_results(metrics: Dict):
     print("=" * 120)
 
     def format_metric(value: float, percentage: bool = False) -> str:
-        if np.isnan(value):
+        if value is None or np.isnan(value):
             return "N/A".center(16)
         if percentage:
             return f"{value * 100:.1f}%".center(16)
@@ -412,6 +481,23 @@ def print_evaluation_results(metrics: Dict):
             ],
         ),
         (
+            "Smoothness",
+            [
+                (
+                    "Rel Smooth ↓",
+                    lambda m: format_metric(
+                        m["smoothness_metrics"]["relative_smoothness"]
+                    ),
+                ),
+                (
+                    "Cont Breaks % ↓",
+                    lambda m: format_metric(
+                        m["smoothness_metrics"]["continuity_breaks"], percentage=True
+                    ),
+                ),
+            ],
+        ),
+        (
             "Overall",
             [
                 (
@@ -424,33 +510,25 @@ def print_evaluation_results(metrics: Dict):
 
     for section_name, metrics_info in sections:
         n_metrics = len(metrics_info)
-        # Calculate table width: 20 (alg) + 16 per metric + (n_metrics) spaces
-        table_width = 20 + 16 * n_metrics + n_metrics
+        table_width = 20 + 17 * n_metrics
 
         print(f"\n{section_name}:")
         print("-" * table_width)
 
-        # Prepare headers with truncation
-        headers = ["Algorithm"] + [
-            name[:16] for name, _ in metrics_info
-        ]  # Truncate long headers
-
-        # Create format string (all columns centered)
-        format_str = "{:^20} " + " ".join(["{:^16}"] * n_metrics)
+        headers = ["Algorithm"] + [name[:16] for name, _ in metrics_info]
+        format_str = "{:<20} " + " ".join(["{:^16}"] * n_metrics)
         print(format_str.format(*headers))
         print("-" * table_width)
 
-        # Process each algorithm
         for algo_name, algo_metrics in metrics.items():
-            algo_display = algo_name[:20]  # Truncate long algorithm names
-
+            algo_display = algo_name[:19]
             try:
                 values = [func(algo_metrics) for _, func in metrics_info]
                 print(format_str.format(algo_display, *values))
             except (KeyError, TypeError) as e:
-                error_values = ["N/A".center(16)] * len(metrics_info)
+                error_values = ["Error".center(16)] * len(metrics_info)
                 print(format_str.format(algo_display, *error_values))
-                print(f"  Warning: Error formatting {algo_name}: {e}")
+                # print(f"  Warning: Could not format results for {algo_name}: {e}")
 
 
 if __name__ == "__main__":
