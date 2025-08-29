@@ -1,13 +1,12 @@
-import torch
+import math
 import random
 from pathlib import Path
-from typing import Dict, Tuple, Union, List
+from typing import Dict, List, Optional, Tuple, Union
+
+import torch
+from torch import Tensor, nn
+
 from .base import PitchDataset
-
-from typing import Optional
-
-import math
-from torch import nn, Tensor
 
 
 class LayerNorm1d(nn.LayerNorm):
@@ -235,7 +234,12 @@ class LightSpeech(nn.Module):
 
         decoder_outputs = self.mel_out(decoder_outputs).transpose(1, 2)
 
-        return decoder_outputs, duration_prediction, pitch_feat[:, 0], pitch_feat[:, 1]
+        return (
+            decoder_outputs,
+            duration_prediction,
+            pitch_feat[:, 0],
+            pitch_feat[:, 1],
+        )
 
 
 class PitchDatasetSpeechSynth(PitchDataset):
@@ -257,10 +261,13 @@ class PitchDatasetSpeechSynth(PitchDataset):
         **kwargs: Additional arguments passed to PitchDataset
     """
 
+    fmin = 65
+    fmax = 300
+
     def __init__(
         self,
         root_dir: str = "lightspeech.pt",
-        samples_per_speaker: int = 10,
+        samples_per_speaker: int = 1,
         word_range: Tuple = (3, 9),
         periodicity_threshold: float = 0.4,
         device: str = "cuda",
@@ -269,6 +276,9 @@ class PitchDatasetSpeechSynth(PitchDataset):
         **kwargs,
     ):
         super().__init__(**kwargs)
+
+        if device == "cuda" and not torch.cuda.is_available():
+            device = "cpu"
 
         self.model_file = Path(root_dir)
         self.samples_per_speaker = samples_per_speaker
@@ -421,7 +431,9 @@ class PitchDatasetSpeechSynth(PitchDataset):
         return self.total_samples
 
     @torch.autocast(
-        device_type="cuda", dtype=torch.float16, enabled=torch.cuda.is_available()
+        device_type="cuda",
+        dtype=torch.float16,
+        enabled=torch.cuda.is_available(),
     )
     @torch.inference_mode()
     def _generate_tts_sample(

@@ -1,9 +1,11 @@
 import argparse
+from typing import List, Optional
+
 import librosa
 import librosa.display
-import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Optional
+import numpy as np
+
 from algorithms import get_algorithm, list_algorithms
 
 
@@ -35,7 +37,9 @@ def compare_pitch_algorithms(
     hop_size: int = 256,
     fmin: float = 65,
     fmax: float = 300,
-    pitch_threshold: Optional[float] = None,  # Override threshold for all algorithms
+    pitch_threshold: Optional[
+        float
+    ] = None,  # Override threshold for all algorithms
     output_file: str = "output.jpg",
 ):
     """Compare different pitch detection algorithms.
@@ -52,6 +56,9 @@ def compare_pitch_algorithms(
     """
     try:
         audio, _ = librosa.load(audio_file, sr=sr)
+        audio_max = np.max(np.abs(audio))
+        if audio_max > 1.0:
+            audio = audio / audio_max
         audio_duration = librosa.get_duration(y=audio, sr=sr)
     except Exception as e:
         raise RuntimeError(f"Error loading audio file: {e}")
@@ -66,7 +73,9 @@ def compare_pitch_algorithms(
 
     # Process audio with each algorithm
     results = []
-    for algo_class, color, linestyle in zip(filtered_algorithms, colors, linestyles):
+    for algo_class, color, linestyle in zip(
+        filtered_algorithms, colors, linestyles
+    ):
         algo_name = algo_class.get_name()
         print(f"Running: {algo_name}")
         try:
@@ -83,13 +92,17 @@ def compare_pitch_algorithms(
                 )  # Use algorithm's default
 
             if algo_instance.supports_continuous_periodicity:
-                pitch, periodicity = algo_instance.extract_continuous_periodicity(audio)
+                pitch, periodicity = (
+                    algo_instance.extract_continuous_periodicity(audio)
+                )
             else:
-                pitch, periodicity = algo_instance.extract_pitch(
-                    audio, threshold=threshold
+                pitch, periodicity, _ = algo_instance.extract_pitch(
+                    audio, thresholds=threshold
                 )
 
-            results.append((algo_name, pitch, periodicity, threshold, color, linestyle))
+            results.append(
+                (algo_name, pitch, periodicity, threshold, color, linestyle)
+            )
         except Exception as e:
             print(f"Error processing {algo_name}: {e}")
             continue
@@ -175,8 +188,12 @@ def compare_pitch_algorithms(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare Pitch Detection Algorithms")
-    parser.add_argument("audio_file", type=str, help="Path to the input audio file")
+    parser = argparse.ArgumentParser(
+        description="Compare Pitch Detection Algorithms"
+    )
+    parser.add_argument(
+        "audio_file", type=str, help="Path to the input audio file"
+    )
     parser.add_argument(
         "--selected_algorithms",
         nargs="+",
@@ -185,9 +202,15 @@ def main():
         help="List of algorithms to visualize. Separate names by spaces, e.g., 'Praat SWIPE'.",
     )
     parser.add_argument("--sr", type=int, default=22050, help="Sampling rate")
-    parser.add_argument("--fmin", type=float, default=65, help="Minimum frequency")
-    parser.add_argument("--fmax", type=float, default=300, help="Maximum frequency")
-    parser.add_argument("--hop-size", type=int, default=256, help="Hop size in samples")
+    parser.add_argument(
+        "--fmin", type=float, default=65, help="Minimum frequency"
+    )
+    parser.add_argument(
+        "--fmax", type=float, default=2093, help="Maximum frequency"
+    )
+    parser.add_argument(
+        "--hop-size", type=int, default=256, help="Hop size in samples"
+    )
     parser.add_argument(
         "--output_file", type=str, default="output.jpg", help="Output file name"
     )

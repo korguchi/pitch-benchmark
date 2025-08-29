@@ -1,7 +1,9 @@
-import numpy as np
 from typing import Tuple
-import amfm_decompy.pYAAPT as pYAAPT
+
 import amfm_decompy.basic_tools as basic
+import amfm_decompy.pYAAPT as pYAAPT
+import numpy as np
+
 from .base import ThresholdPitchAlgorithm
 
 
@@ -66,4 +68,11 @@ class YAAPTPitchAlgorithm(ThresholdPitchAlgorithm):
         # frames_pos is in samples, so divide by sample_rate to get seconds
         times = np.array(pitch.frames_pos) / self.sample_rate
 
-        return times, pitch_values, (pitch_values >= self.fmin).astype(np.float32)
+        return (
+            times,
+            pitch_values,
+            (pitch_values >= self.fmin).astype(np.float32),
+        )
+
+    def _get_default_threshold(self) -> float:
+        return 0.675

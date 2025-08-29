@@ -1,6 +1,8 @@
+from typing import Tuple
+
 import numpy as np
 import parselmouth
-from typing import Tuple
+
 from .base import ContinuousPitchAlgorithm
 
 
@@ -19,3 +21,6 @@ class PraatPitchAlgorithm(ContinuousPitchAlgorithm):
             pitch_obj.selected_array["frequency"],
             pitch_obj.selected_array["strength"],
         )
+
+    def _get_default_threshold(self) -> float:
+        return 0.775

@@ -1,29 +1,30 @@
-from .base import PitchDataset
-from .ptdb import PitchDatasetPTDB
-from .mdb import PitchDatasetMDBStemSynth
-from .nsynth import PitchDatasetNSynth
-from .speechsynth import PitchDatasetSpeechSynth
-from .mir1k import PitchDatasetMIR1K
-from .vocadito import PitchDatasetVocadito
 from .bach10synth import PitchDatasetBach10Synth
-from .noise import NoiseAugmentedDataset, CHiMeNoiseDataset
+from .base import PitchDataset
+from .mdb import PitchDatasetMDBStemSynth
+from .mir1k import PitchDatasetMIR1K
+from .noise import CHiMeNoiseDataset
+from .nsynth import PitchDatasetNSynth
+from .ptdb import PitchDatasetPTDB, PitchDatasetPTDBNoisy
+from .speechsynth import PitchDatasetSpeechSynth
+from .vocadito import PitchDatasetVocadito
 
 __all__ = [
     "PitchDataset",
     "PitchDatasetPTDB",
+    "PitchDatasetPTDBNoisy",
     "PitchDatasetMDBStemSynth",
     "PitchDatasetNSynth",
     "PitchDatasetSpeechSynth",
     "PitchDatasetMIR1K",
     "PitchDatasetVocadito",
     "PitchDatasetBach10Synth",
-    "NoiseAugmentedDataset",
     "CHiMeNoiseDataset",
 ]
 
 # Separate registries for different dataset types/capabilities
 _PITCH_REGISTRY = {
     "PTDB": PitchDatasetPTDB,
+    "PTDBNoisy": PitchDatasetPTDBNoisy,
     "NSynth": PitchDatasetNSynth,
     "MDBStemSynth": PitchDatasetMDBStemSynth,
     "SpeechSynth": PitchDatasetSpeechSynth,

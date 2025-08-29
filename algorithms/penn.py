@@ -1,7 +1,9 @@
-import numpy as np
-import torch
-import penn
 from typing import Tuple
+
+import numpy as np
+import penn
+import torch
+
 from .base import ContinuousPitchAlgorithm
 
 
@@ -84,4 +86,11 @@ class PENNPitchAlgorithm(ContinuousPitchAlgorithm):
         times = (np.arange(n_frames) * self.hopsize_seconds) + time_offset
 
         # Convert to numpy and remove batch dimension
-        return times, pitch.squeeze().cpu().numpy(), periodicity.squeeze().cpu().numpy()
+        return (
+            times,
+            pitch.squeeze().cpu().numpy(),
+            periodicity.squeeze().cpu().numpy(),
+        )
+
+    def _get_default_threshold(self) -> float:
+        return 0.388

@@ -1,7 +1,9 @@
-import numpy as np
 from typing import Tuple
-from basic_pitch.inference import predict, Model
-from basic_pitch import ICASSP_2022_MODEL_PATH
+
+import numpy as np
+from basic_pitch import FilenameSuffix, build_icassp_2022_model_path
+from basic_pitch.inference import Model, predict
+
 from .base import ContinuousPitchAlgorithm
 
 
@@ -34,16 +36,18 @@ class BasicPitchPitchAlgorithm(ContinuousPitchAlgorithm):
         self.melodia_trick = melodia_trick
 
         # Load the Basic Pitch model once during initialization
-        self.model = Model(ICASSP_2022_MODEL_PATH)
+        onnx_model_path = build_icassp_2022_model_path(FilenameSuffix.onnx)
+        self.model = Model(onnx_model_path)
 
     def _extract_raw_pitch_and_periodicity(
         self, audio: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        import tempfile
-        import soundfile as sf
         import os
+        import tempfile
         from contextlib import redirect_stdout
         from io import StringIO
+
+        import soundfile as sf
 
         # Basic Pitch expects a file path, so we need to save the audio temporarily
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
@@ -98,3 +102,6 @@ class BasicPitchPitchAlgorithm(ContinuousPitchAlgorithm):
         times = np.arange(n_frames) / frame_rate
 
         return times, pitch_estimates, max_confidences
+
+    def _get_default_threshold(self) -> float:
+        return 0.45

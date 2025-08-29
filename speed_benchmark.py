@@ -1,9 +1,15 @@
-import torch
-import time
-import numpy as np
 import argparse
+import json
+import os
+import time
+from datetime import datetime, timezone
 from typing import List, Type
+
+import numpy as np
+import torch
 from tabulate import tabulate
+from tqdm import tqdm
+
 from algorithms import get_algorithm, list_algorithms
 
 # Get available algorithms once
@@ -76,6 +82,7 @@ def benchmark_algorithm(
 def run_benchmark(
     algorithm_classes: List[Type],
     baseline_algorithm: Type,
+    output_dir: str = "results",
     sample_rate: int = 22050,
     hop_length: int = 256,
     signal_length_sec: float = 5.0,
@@ -84,14 +91,18 @@ def run_benchmark(
     """
     Run benchmarks using relative performance measurements.
     """
+    print(f"Generating test signal ({signal_length_sec}s at {sample_rate}Hz)...")
     audio_signal = generate_harmonic_signal(sample_rate, signal_length_sec)
 
     devices = ["cpu"]
     if torch.cuda.is_available():
         devices.append("cuda")
+        print(f"CUDA available: {torch.cuda.get_device_name()}")
 
+    print(f"\nBenchmarking baseline: {baseline_algorithm.get_name()}")
     baseline_times = {}
     for device in devices:
+        print(f"  Running {baseline_algorithm.get_name()} on {device.upper()}...")
         baseline_times[device] = benchmark_algorithm(
             baseline_algorithm,
             audio_signal,
@@ -101,9 +112,16 @@ def run_benchmark(
             n_runs,
         )
 
+    print("\nBenchmarking all algorithms...")
     results = []
-    for algorithm_class in algorithm_classes:
+    algorithm_results = {}  # Store results for JSON output
+
+    for algorithm_class in tqdm(algorithm_classes, desc="Testing algorithms"):
+        # Update the progress bar description to show current algorithm
+        tqdm.write(f"Testing {algorithm_class.get_name()}...")
+
         row = [algorithm_class.get_name()]
+        algo_data = {"device_results": {}, "supports_cuda": False}
 
         for device in devices:
             latency = benchmark_algorithm(
@@ -117,7 +135,16 @@ def run_benchmark(
 
             if latency == float("inf"):
                 row.append("CPU only")
+                algo_data["device_results"][device] = {
+                    "supported": False,
+                    "absolute_time_ms": None,
+                    "relative_speed": None,
+                    "baseline_time_ms": baseline_times[device] * 1000,
+                }
             else:
+                if device == "cuda":
+                    algo_data["supports_cuda"] = True
+
                 if algorithm_class == baseline_algorithm:
                     relative_speed = 1.0  # Force baseline to exactly 1.0x
                 else:
@@ -125,12 +152,63 @@ def run_benchmark(
                 abs_time = latency * 1000  # Convert to ms
                 row.append(f"{relative_speed:.2f}x ({abs_time:.1f}ms)")
 
-        results.append(row)
+                algo_data["device_results"][device] = {
+                    "supported": True,
+                    "absolute_time_ms": float(abs_time),
+                    "relative_speed": float(relative_speed),
+                    "baseline_time_ms": float(baseline_times[device] * 1000),
+                }
 
+        results.append(row)
+        algorithm_results[algorithm_class.get_name()] = algo_data
+
+    # Print console table as before
     headers = ["Algorithm"] + [f"{dev.upper()}" for dev in devices]
     print("\nBenchmark Results")
     print(f"Baseline: {baseline_algorithm.get_name()}")
     print(tabulate(results, headers=headers, tablefmt="grid"))
+
+    # Save JSON results
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    for algo_name, algo_data in algorithm_results.items():
+        # Create parameter string for filename consistency
+        param_str = (
+            f"sr{int(sample_rate / 1000)}k_"
+            f"hop{hop_length}_"
+            f"len{signal_length_sec}s_"
+            f"runs{n_runs}"
+        )
+
+        result_path = os.path.join(output_dir, f"speed_{algo_name}_{param_str}.json")
+
+        full_result = {
+            "metadata": {
+                "benchmark_type": "speed",
+                "algorithm_name": algo_name,
+                "baseline_algorithm": baseline_algorithm.get_name(),
+                "timestamp_utc": timestamp,
+                "devices_tested": devices,
+                "cuda_available": torch.cuda.is_available(),
+            },
+            "parameters": {
+                "sample_rate": sample_rate,
+                "hop_length": hop_length,
+                "signal_length_seconds": signal_length_sec,
+                "n_runs": n_runs,
+                "signal_type": "harmonic",
+                "fundamental_frequency": 440,
+                "harmonics": [1, 2, 3],
+            },
+            "results": {
+                "supports_cuda": algo_data["supports_cuda"],
+                "device_performance": algo_data["device_results"],
+            },
+        }
+
+        with open(result_path, "w") as f:
+            json.dump(full_result, f, indent=4)
 
 
 if __name__ == "__main__":
@@ -150,7 +228,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--baseline",
         type=str,
-        default="TorchCREPE",
+        default="CREPE",
         choices=AVAILABLE_ALGORITHMS,
         help="Baseline algorithm for relative speed comparison",
     )
@@ -163,11 +241,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--signal-length",
         type=float,
-        default=5.0,
+        default=1.0,
         help="Length of test signal in seconds",
     )
     parser.add_argument(
-        "--n-runs", type=int, default=20, help="Number of benchmark runs per algorithm"
+        "--n-runs",
+        type=int,
+        default=10,
+        help="Number of benchmark runs per algorithm",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="results",
+        help="Directory to save JSON results",
     )
 
     args = parser.parse_args()
@@ -183,6 +270,7 @@ if __name__ == "__main__":
     run_benchmark(
         algorithm_classes=algorithms,
         baseline_algorithm=baseline_algorithm,
+        output_dir=args.output_dir,
         sample_rate=args.sample_rate,
         hop_length=args.hop_length,
         signal_length_sec=args.signal_length,

@@ -1,6 +1,8 @@
-import numpy as np
-import librosa
 from typing import Tuple
+
+import librosa
+import numpy as np
+
 from .base import ContinuousPitchAlgorithm
 
 
@@ -18,3 +20,6 @@ class pYINPitchAlgorithm(ContinuousPitchAlgorithm):
         )
         times = librosa.times_like(pitch, sr=self.sample_rate, hop_length=self.hop_size)
         return times, pitch, voiced_probs
+
+    def _get_default_threshold(self) -> float:
+        return 0.1

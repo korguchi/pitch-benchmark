@@ -1,80 +1,123 @@
 # Pitch Detection Benchmark
 
-A comprehensive benchmark suite for evaluating and comparing different pitch detection algorithms across multiple datasets and metrics.
+A comprehensive benchmark suite evaluating pitch detection algorithms across 8 datasets covering speech, music, synthetic, and real-world audio conditions.
 
-## 📊 Key Findings
+## Which Algorithm Should I Use?
 
-SwiftF0 achieves the highest average harmonic-mean accuracy (81.7%) across seven datasets while also delivering near real-time performance (≈42× faster than the TorchCREPE baseline on CPU). pYIN follows with the second-highest average accuracy (71.9%). TorchCREPE ranks third (71.0%) and remains the slowest algorithm, taking ≈5.5 s to process 5 s of audio on CPU. Praat delivers an excellent speed–accuracy balance: it processes 5 s of audio in just 7 ms on CPU (≈809× faster than TorchCREPE) while maintaining a strong overall accuracy of 66.3%. For a detailed breakdown of results, see [Benchmark Results](benchmark_results.md).
+**TL;DR Recommendations:**
+- **Best Overall**: **SwiftF0** (90.2% accuracy, 90× faster than CREPE)
+- **Need Maximum Speed**: **Praat** (2.8ms per second of audio, 84.7% accuracy)
+- **Best Pitch Accuracy**: **CREPE** (85.3% accuracy, best RPA/RCA but slow and not good on all metrics)
 
-| **Algorithm** | **NSynth** | **PTDB**  | **SpeechSynth** | **MIR‑1K** | **MDB‑STEM‑Synth** | **Vocadito** | **Bach10‑mf0‑synth** | **Average** |
-| ------------- | ---------- | --------- | --------------- | ---------- | ------------------ | ------------ | -------------------- | ----------- |
-| BasicPitch    | 11.9%      | 12.8%     | 55.9%           | 25.7%      | 8.1%               | 13.1%        | 19.4%                | 21.0%   |
-| pYIN          | 17.8%      | 72.3%     | 55.8%           | 89.4%      | **83.6%**          | 89.8%        | 94.4%                | 71.9%   |
-| Praat         | 22.5%      | 80.4%     | 77.0%           | 74.1%      | 59.1%              | 82.2%        | 69.1%                | 66.3%   |
-| PENN          | 2.0%       | 82.5%     | 77.0%           | 80.4%      | 61.4%              | 57.2%        | 45.4%                | 58.0%   |
-| RAPT          | 13.2%      | 70.7%     | 67.3%           | 76.5%      | 70.3%              | 78.0%        | 78.8%                | 65.0%   |
-| SWIPE         | 13.4%      | 50.8%     | 66.8%           | 73.6%      | 58.6%              | 72.7%        | 74.8%                | 58.7%   |
-| TorchCREPE    | **73.4%**  | 66.0%     | 82.4%           | 71.4%      | 49.6%              | 64.2%        | 90.3%                | 71.0%   |
-| YAAPT         | 2.3%       | 67.9%     | 78.7%           | 70.0%      | 24.9%              | 86.0%        | 31.2%                | 51.6%   |
-| SwiftF0       | 33.6%      | **87.0%** | **88.7%**       | **93.3%**  | 82.6%              | **92.1%**    | **94.6%**            | **81.7%**   |
+## Overall Results
 
-## 🚀 Quick Start
+The table below shows the harmonic-mean accuracy score for each algorithm across the eight benchmark datasets. The average score determines the overall ranking.
+
+| **Algorithm** | **Bach10Synth** | **MDBStemSynth** | **MIR1K** | **NSynth** | **PTDB** | **PTDBNoisy** | **SpeechSynth** | **Vocadito** | **Average** |
+|---|---|---|---|---|---|---|---|---|---|
+| **SwiftF0** | 97.5% | 92.0% | 95.0% | **89.3%** | 90.4% | 74.0% | **90.7%** | 92.6% | **90.2%** |
+| CREPE | **98.5%** | 90.5% | **95.7%** | 80.2% | 79.7% | 53.8% | 88.3% | **95.6%** | 85.3% |
+| PENN | 97.3% | **94.0%** | 89.0% | 63.3% | **91.0%** | **76.4%** | 84.8% | 82.4% | 84.8% |
+| Praat | 96.0% | 90.7% | 92.6% | 70.7% | 86.2% | 65.3% | 88.2% | 88.2% | 84.7% |
+| SPICE | 95.0% | 89.4% | 92.7% | 68.8% | 77.8% | 55.9% | 87.9% | 92.3% | 82.5% |
+| TorchCREPE | 96.7% | 85.1% | 71.4% | 83.8% | 78.3% | 61.2% | 79.7% | 89.0% | 80.6% |
+| pYIN | 97.5% | 90.3% | 91.2% | 74.3% | 72.1% | 43.2% | 81.4% | 79.5% | 78.7% |
+| RAPT | 91.9% | 79.6% | 82.4% | 54.6% | 68.4% | 48.9% | 74.3% | 87.5% | 73.5% |
+| SWIPE | 77.8% | 65.6% | 77.1% | 51.4% | 66.6% | 45.0% | 77.1% | 66.6% | 65.9% |
+| YAAPT | 58.5% | 39.6% | 82.0% | 6.4% | 69.8% | 51.7% | 83.5% | 88.6% | 60.0% |
+| BasicPitch | 23.7% | 12.4% | 36.5% | 77.7% | 23.1% | 12.6% | 61.2% | 17.8% | 33.1% |
+
+For a detailed breakdown of results, see [Benchmark Report](benchmark_report.md).
+
+## Running Your Own Benchmarks
 
 ### Installation
 
+This project uses [uv](https://docs.astral.sh/uv/pip/environments/) (a fast Python package manager) for dependency management, but `conda` or `pip` will also work.
+
 ```bash
-pip install -r requirements.txt
+uv venv --python 3.10
+source .venv/bin/activate
+uv pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126 --index-strategy unsafe-best-match
 ```
 
-### Basic Usage
+### Dataset Setup
 
-Visualize algorithm comparisons:
-```bash
-python visualize_algorithms.py audio_file.wav
+Download the required datasets:
+
+- [PTDB-TUG](https://www.spsc.tugraz.at/databases-and-tools/ptdb-tug-pitch-tracking-database-from-graz-university-of-technology.html) - Speech with laryngograph ground truth
+- [NSynth](https://magenta.tensorflow.org/datasets/nsynth) - Synthetic musical instruments
+- [MDB-stem-synth](https://zenodo.org/records/1481172) - Synthetic music stems
+- [MIR-1K](https://zenodo.org/records/3532216) - Vocal excerpts
+- [Vocadito](https://zenodo.org/records/5578807) - Solo vocal recordings
+- [Bach10-mf0-synth](https://zenodo.org/records/1481156/files/Bach10-mf0-syth.tar.gz) - Synthetic Bach compositions
+- [CHiME-Home](https://archive.org/details/chime-home) - Background noise for testing
+
+Organize datasets in a directory structure like:
+```
+datasets/
+├── PTDB/
+├── NSynth/
+├── MDBStemSynth/
+├── MIR1K/
+├── Vocadito/
+├── Bach10Synth/
+└── chime_home/
 ```
 
-Run speed benchmark:
+### Usage
+
+**1. Visualize Algorithms on Your Audio**
 ```bash
-python speed_benchmark.py
+python visualize_algorithms.py your_audio.wav --selected_algorithms SwiftF0 CREPE Praat
 ```
 
-Run pitch detection benchmark:
+**2. Speed Benchmark**
 ```bash
-python pitch_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
+python speed_benchmark.py --signal-length 1.0 --n-runs 20
 ```
 
-**[Experimental]** Run music transcription benchmark:
+**3. Pitch Benchmark**
+
 ```bash
-python note_benchmark.py --dataset DATASET_NAME --data-dir DATA_PATH
+for dataset in PTDB NSynth MIR1K Vocadito MDBStemSynth Bach10Synth; do
+  python pitch_benchmark.py \
+    --dataset $dataset \
+    --data-dir datasets/$dataset \
+    --chime-dir datasets/chime_home
+done
+python pitch_benchmark.py --dataset PTDBNoisy --data-dir datasets/PTDB --chime-dir datasets/chime_home
+python pitch_benchmark.py --dataset SpeechSynth --data-dir datasets/speechsynth.pt --chime-dir audio_datasets/chime_home
 ```
 
-## 🛠️ Features
+**4. Generate Report**
 
-- Comprehensive evaluation across various datasets:
-  - [PTDB](https://www.spsc.tugraz.at/databases-and-tools/ptdb-tug-pitch-tracking-database-from-graz-university-of-technology.html)
-  - [NSynth](https://magenta.tensorflow.org/datasets/nsynth)
-  - [MDB-stem-synth](https://zenodo.org/records/1481172)
-  - [MIR-1K](https://zenodo.org/records/3532216)
-  - [Vocadito](https://zenodo.org/records/5578807)
-  - [Bach10-mf0-synth](https://zenodo.org/records/1481156/files/Bach10-mf0-syth.tar.gz)
-  - A novel synthetic speech dataset: SpeechSynth
-- Performance benchmarking for CPU and GPU execution
-- Testing under noisy conditions: [CHiME-Home dataset](https://archive.org/details/chime-home)
-- Visualization tools for algorithm comparison
-- Implementation of popular pitch detection algorithms:
-  - [YAAPT](https://bjbschmitt.github.io/AMFM_decompy/pYAAPT.html) (pYAAPT implementation)
-  - [Praat](https://github.com/YannickJadoul/Parselmouth) (Parselmouth implementation)
-  - [TorchCREPE](https://github.com/maxrmorrison/torchcrepe) (PyTorch implementation of CREPE) and [CREPE](https://github.com/marl/crepe) (original implementation)
-  - [Pitch-Estimating Neural Networks (PENN)](https://github.com/interactiveaudiolab/penn)
-  - [SWIPE](https://pysptk.readthedocs.io/en/latest/generated/pysptk.sptk.swipe.html) (SPTK implementation)
-  - [RAPT](https://pysptk.readthedocs.io/en/latest/generated/pysptk.sptk.rapt.html) (SPTK implementation)
-  - [pYIN](https://librosa.org/doc/main/generated/librosa.pyin.html) (librosa implementation)
-  - [BasicPitch](https://github.com/spotify/basic-pitch)
-  - [SwiftF0](https://github.com/lars76/swift-f0)
+```bash
+python generate_report.py --results-dir results/ --output benchmark_report.md
+```
+
+### Algorithm Implementations
+
+The benchmark includes implementations of these algorithms:
+
+**Neural Networks:**
+- [SwiftF0](https://github.com/lars76/swift-f0) - Fast CNN-based pitch detection
+- [CREPE](https://github.com/marl/crepe) - CNN-based pitch estimation
+- [TorchCREPE](https://github.com/maxrmorrison/torchcrepe) - PyTorch CREPE implementation
+- [PENN](https://github.com/interactiveaudiolab/penn) - Pitch-Estimating Neural Networks
+- [BasicPitch](https://github.com/spotify/basic-pitch) - Spotify's multi-instrument pitch detector
+- [SPICE](https://www.tensorflow.org/hub/tutorials/spice) - Self-supervised pitch estimation
+
+**Classical Methods:**
+- [Praat](https://github.com/YannickJadoul/Parselmouth) - Autocorrelation-based
+- [pYIN](https://librosa.org/doc/main/generated/librosa.pyin.html) - Probabilistic YIN
+- [YAAPT](https://bjbschmitt.github.io/AMFM_decompy/pYAAPT.html) - Yet Another Algorithm for Pitch Tracking
+- [RAPT](https://pysptk.readthedocs.io/en/latest/generated/pysptk.sptk.rapt.html) - Robust Algorithm for Pitch Tracking
+- [SWIPE](https://pysptk.readthedocs.io/en/latest/generated/pysptk.sptk.swipe.html) - Sawtooth Waveform Inspired Pitch Estimator
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! To add a new algorithm, you can either submit a Pull Request with your own implementation or create an Issue to request it, and I will run the benchmark for you.
 
 ## 📄 License
 
@@ -85,10 +128,13 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 If you use this benchmark in your research, please cite:
 
 ```bibtex
-@software{pitch_detection_benchmark,
-  title = {Pitch Detection Benchmark},
-  author = {Lars Nieradzik},
-  year = {2025},
-  url = {https://github.com/lars76/pitch-detection-benchmark}
+@misc{nieradzik2025swiftf0,
+      title={SwiftF0: Fast and Accurate Monophonic Pitch Detection},
+      author={Lars Nieradzik},
+      year={2025},
+      eprint={2508.18440},
+      archivePrefix={arXiv},
+      primaryClass={cs.SD},
+      url={https://arxiv.org/abs/2508.18440},
 }
 ```

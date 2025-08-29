@@ -1,8 +1,10 @@
-import torch
 import json
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
+import torch
 import torchaudio
-from typing import Dict, List, Tuple, Optional, Union
+
 from .base import PitchDataset
 
 
@@ -33,6 +35,9 @@ class PitchDatasetNSynth(PitchDataset):
         ValueError: If no examples match the specified criteria or if invalid parameters are provided
         IOError: If there are errors loading the dataset metadata
     """
+
+    fmin = 65
+    fmax = 2093
 
     VALID_SOURCES = {"acoustic", "electronic", "synthetic"}
     VALID_FAMILIES = {

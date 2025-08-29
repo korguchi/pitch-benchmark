@@ -1,9 +1,11 @@
-import torch
 from pathlib import Path
-import torchaudio
-import numpy as np
 from typing import Dict, List, Tuple, Union
+
+import numpy as np
 import pandas as pd
+import torch
+import torchaudio
+
 from .base import PitchDataset
 
 
@@ -12,13 +14,16 @@ class PitchDatasetVocadito(PitchDataset):
     Implementation of PitchDataset for the vocadito dataset.
 
     The vocadito dataset contains 40 short excerpts of solo, monophonic singing.
-    For more details, see the technical report: https://doi.org/10.5281/zenodo.4619711
+    For more details, see the technical report: https://zenodo.org/records/5578807
 
     Args:
         root_dir (str): Root directory of the vocadito dataset.
         use_cache (bool, optional): Whether to cache loaded data. Defaults to True.
         **kwargs: Additional arguments passed to the base PitchDataset.
     """
+
+    fmin = 80
+    fmax = 1000
 
     def __init__(self, root_dir: str, use_cache: bool = True, **kwargs):
         super().__init__(**kwargs)

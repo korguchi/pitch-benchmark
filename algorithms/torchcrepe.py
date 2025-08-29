@@ -1,7 +1,9 @@
+from typing import Callable, Tuple
+
 import numpy as np
-import torchcrepe
 import torch
-from typing import Tuple, Callable
+import torchcrepe
+
 from .base import ContinuousPitchAlgorithm
 
 
@@ -65,3 +67,6 @@ class TorchCREPEPitchAlgorithm(ContinuousPitchAlgorithm):
         times = frame_centers / self.sample_rate
 
         return times, pitch, periodicity
+
+    def _get_default_threshold(self) -> float:
+        return 0.613

@@ -1,285 +1,264 @@
+import random
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
 import torch
 import torchaudio
-import random
-import warnings
-from typing import Dict, Union, Optional
-from pathlib import Path
 
 
-class NoiseAugmentedDataset(torch.utils.data.Dataset):
-    """
-    A wrapper dataset that adds background noise to any PitchDataset.
-
-    This class wraps an existing PitchDataset and applies noise augmentation
-    to the audio samples while preserving pitch and periodicity information.
-
-    Args:
-        base_dataset: The underlying PitchDataset to wrap
-        noise_source: Either a path to noise files directory or 'white' for white noise
-        snr_db: Signal-to-noise ratio in dB (higher = less noise)
-        noise_probability: Probability of applying noise to each sample (0.0 to 1.0)
-        noise_sample_rate: Sample rate of noise files (if using file-based noise)
-        enable_caching: Whether to cache loaded noise files in memory
-        **kwargs: Additional arguments for future extensibility
-    """
-
-    def __init__(
-        self,
-        base_dataset,  # Should be a PitchDataset instance
-        noise_source: Union[str, Path] = "white",
-        snr_db: float = 20.0,
-        noise_probability: float = 1.0,
-        noise_sample_rate: Optional[int] = None,
-        enable_caching: bool = True,
-        **kwargs,
-    ):
-        self.base_dataset = base_dataset
-        self.snr_db = snr_db
-        self.noise_probability = noise_probability
-        self.enable_caching = enable_caching
-
-        # Caches for deterministic noise generation
-        self.audio_cache: Dict[str, torch.Tensor] = {}  # Cached noise files
-        self.noise_decisions: Dict[
-            int, bool
-        ] = {}  # Noise application decisions per index
-        self.noise_audio_cache: Dict[
-            int, torch.Tensor
-        ] = {}  # Final noisy audio per index
-
-        # Get target sample rate from base dataset
-        self.target_sample_rate = base_dataset.sample_rate
-        # Give access to important base dataset attributes
-        self.sample_rate = self.target_sample_rate
-        self.hop_size = base_dataset.hop_size
-
-        # Setup noise source
-        if noise_source == "white":
-            self.noise_type = "white"
-            self.noise_files = []
-        else:
-            self.noise_type = "file"
-            self._setup_file_noise(noise_source, noise_sample_rate)
-
-    def _setup_file_noise(
-        self, noise_dir: Union[str, Path], noise_sample_rate: Optional[int]
-    ):
-        """Setup file-based noise source."""
-        noise_dir = Path(noise_dir)
-
-        if not noise_dir.exists():
-            raise ValueError(f"Noise directory not found: {noise_dir}")
-
-        # Find audio files (support common formats)
-        audio_extensions = ["*.wav", "*.mp3", "*.flac", "*.m4a"]
-        self.noise_files = []
-
-        for ext in audio_extensions:
-            self.noise_files.extend(list(noise_dir.glob(f"**/{ext}")))
-
-        if not self.noise_files:
-            raise ValueError(f"No audio files found in {noise_dir}")
-
-        self.noise_sample_rate = noise_sample_rate
-        print(f"Loaded {len(self.noise_files)} noise files")
-
-    def __len__(self) -> int:
-        """Return length of the underlying dataset."""
-        return len(self.base_dataset)
-
-    def __getitem__(self, idx: int) -> Dict[str, Union[torch.Tensor, Path]]:
-        """
-        Get item from base dataset and optionally apply deterministic noise.
-        """
-        # Return cached version if available
-        if idx in self.noise_audio_cache:
-            return self.noise_audio_cache[idx]
-
-        # Get original sample from base dataset
-        sample = self.base_dataset[idx]
-
-        # Make deterministic noise decision based on index
-        if idx not in self.noise_decisions:
-            # Create index-specific RNG for reproducible decisions
-            rng = random.Random(idx)
-            self.noise_decisions[idx] = rng.random() < self.noise_probability
-
-        if self.noise_decisions[idx]:
-            # Apply deterministic noise
-            noisy_audio = self._add_deterministic_noise(sample["audio"], idx)
-            # Create new sample with noisy audio
-            noisy_sample = {**sample, "audio": noisy_audio}
-            # Cache for future access
-            self.noise_audio_cache[idx] = noisy_sample
-            return noisy_sample
-
-        return sample
-
-    def _add_deterministic_noise(self, audio: torch.Tensor, idx: int) -> torch.Tensor:
-        """Add deterministic noise using index-based generation"""
-        audio_length = audio.shape[-1]
-
-        # Generate noise based on source type
-        if self.noise_type == "white":
-            noise = self._generate_deterministic_white_noise(audio_length, idx)
-        else:
-            noise = self._generate_deterministic_file_noise(audio_length, idx)
-
-        # Move noise to same device as audio
-        noise = noise.to(audio.device)
-
-        # Handle channel dimension matching
-        if audio.dim() == 2:  # Audio has channel dimension (C, T)
-            # Add channel dimension to noise if missing
-            if noise.dim() == 1:
-                noise = noise.unsqueeze(0)  # Shape: (1, T)
-        else:  # Audio is 1D (T,)
-            # Remove channel dimension if present
-            if noise.dim() == 2:
-                noise = noise.squeeze(0)
-
-        # Calculate signal and noise power
-        signal_power = torch.mean(audio**2)
-        noise_power = torch.mean(noise**2)
-
-        # Avoid division by zero
-        if noise_power == 0:
-            warnings.warn("Generated noise has zero power, returning original audio")
-            return audio
-
-        # Calculate scaling factor for desired SNR
-        snr_linear = 10 ** (self.snr_db / 10)
-        noise_scale = torch.sqrt(signal_power / (snr_linear * noise_power))
-
-        # Add scaled noise to signal
-        noisy_audio = audio + noise_scale * noise
-
-        # Normalize to prevent clipping
-        max_abs = torch.max(torch.abs(noisy_audio))
-        if max_abs > 1.0:
-            noisy_audio = noisy_audio / max_abs
-
-        return noisy_audio
-
-    def _generate_deterministic_white_noise(
-        self, length: int, idx: int
-    ) -> torch.Tensor:
-        """White noise with index-based seeding"""
-        # Seed numpy (used by torch) with index-derived value
-        seed = hash(idx) % 2**32
-        torch.manual_seed(seed)
-        return torch.randn(length)
-
-    def _generate_deterministic_file_noise(self, length: int, idx: int) -> torch.Tensor:
-        """File-based noise with index-based deterministic selection"""
-        # Create index-specific RNG
-        rng = random.Random(idx)
-
-        # 1. Select file deterministically
-        noise_idx = rng.randint(0, len(self.noise_files) - 1)
-        noise_path = self.noise_files[noise_idx]
-        noise_filename = noise_path.name
-
-        # 2. Load with caching
-        if self.enable_caching and noise_filename in self.audio_cache:
-            noise_audio = self.audio_cache[noise_filename]
-        else:
-            try:
-                noise_audio, file_sr = torchaudio.load(str(noise_path))
-
-                # Convert to mono if stereo
-                if noise_audio.shape[0] > 1:
-                    noise_audio = torch.mean(noise_audio, dim=0, keepdim=True)
-
-                # Resample to target sample rate if needed
-                if file_sr != self.target_sample_rate:
-                    resampler = torchaudio.transforms.Resample(
-                        file_sr, self.target_sample_rate
-                    )
-                    noise_audio = resampler(noise_audio)
-
-                # Cache the processed audio
-                if self.enable_caching:
-                    self.audio_cache[noise_filename] = noise_audio.clone()
-
-            except Exception as e:
-                warnings.warn(f"Could not load noise file {noise_path}: {e}")
-                return torch.zeros(1, length)  # Return with channel dimension
-
-        # 3. Handle length mismatch
-        current_length = noise_audio.shape[-1]
-
-        if current_length < length:
-            # Repeat the noise if it's shorter than needed
-            repeats = (length // current_length) + 1
-            noise_audio = noise_audio.repeat(1, repeats)
-            current_length = noise_audio.shape[-1]
-
-        # 4. Deterministic cropping
-        if current_length > length:
-            max_start = current_length - length
-            start_idx = rng.randint(0, max_start)  # Deterministic based on idx
-            noise_audio = noise_audio[:, start_idx : start_idx + length]
-        elif current_length < length:
-            # Pad with zeros if still too short
-            padding = length - current_length
-            noise_audio = torch.nn.functional.pad(noise_audio, (0, padding))
-
-        return noise_audio
-
-    def clear_caches(self):
-        """Clear all noise caches"""
-        self.noise_decisions = {}
-        self.noise_audio_cache = {}
-
-
-class CHiMeNoiseDataset(NoiseAugmentedDataset):
-    """Convenience wrapper specifically for CHiME-Home noise."""
-
+class CHiMeNoiseDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         base_dataset,
         chime_home_dir: Union[str, Path],
+        additional_noise_dirs: Optional[List[Union[str, Path]]] = None,
         chime_sample_rate: int = 16000,
+        background_snr_range: Tuple[float, float] = (20.0, 40.0),
+        voice_gain_range: Tuple[float, float] = (-6.0, 6.0),
+        chime_noise_ratio_range: Tuple[float, float] = (0.0, 1.0),
+        power_threshold: float = 1e-8,
+        fallback_snr_db: float = -35.0,
         **kwargs,
     ):
-        """
-        Initialize with CHiME-Home dataset.
+        self.base_dataset = base_dataset
+        self.background_snr_range = background_snr_range
+        self.voice_gain_range = voice_gain_range
+        self.chime_noise_ratio_range = chime_noise_ratio_range
+        self.power_threshold = power_threshold
+        self.fallback_snr_db = fallback_snr_db
+        self.sample_rate = base_dataset.sample_rate
+        self.hop_size = base_dataset.hop_size
+        self.fmin = base_dataset.fmin
+        self.fmax = base_dataset.fmax
 
-        Args:
-            base_dataset: The underlying PitchDataset to wrap
-            chime_home_dir: Path to CHiME-Home dataset directory
-            chime_sample_rate: CHiME sample rate (16000 or 48000)
-            **kwargs: All arguments from NoiseAugmentedDataset (snr_db, noise_probability, etc.)
-        """
+        # Setup CHiME files
         chime_home_dir = Path(chime_home_dir)
         chunks_dir = chime_home_dir / "chunks"
 
         if not chunks_dir.exists():
             raise ValueError(f"CHiME chunks directory not found: {chunks_dir}")
 
-        # Determine audio file suffix based on sample rate
-        if chime_sample_rate == 16000:
-            audio_suffix = ".16kHz.wav"
-        elif chime_sample_rate == 48000:
-            audio_suffix = ".48kHz.wav"
-        else:
-            raise ValueError(f"Unsupported CHiME sample rate: {chime_sample_rate}")
+        # Find matching files
+        suffix = f".{chime_sample_rate // 1000}kHz.wav"
+        chime_files = list(chunks_dir.rglob(f"*{suffix}"))
 
-        # Create temporary directory structure for the parent class
-        super().__init__(
-            base_dataset=base_dataset,
-            noise_source=chunks_dir,
-            noise_sample_rate=chime_sample_rate,
-            **kwargs,
+        if not chime_files:
+            raise ValueError(f"No CHiME files found with suffix {suffix}")
+
+        # Initialize resampler cache
+        self.resamplers = {}
+        self.noise_cache = []
+
+        # Load CHiME noises
+        self._load_noise_files(chime_files)
+
+        # Load additional noises
+        if additional_noise_dirs:
+            for noise_dir in additional_noise_dirs:
+                noise_dir = Path(noise_dir)
+                if not noise_dir.exists():
+                    raise ValueError(f"Noise directory not found: {noise_dir}")
+                noise_files = list(noise_dir.rglob("*.wav"))
+                if noise_files:
+                    self._load_noise_files(noise_files)
+
+        if not self.noise_cache:
+            raise RuntimeError("No noise files available after loading")
+
+        # Initialize noise selection
+        self.available_noise_indices = list(range(len(self.noise_cache)))
+        random.shuffle(self.available_noise_indices)
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def _load_noise_files(self, file_paths: List[Path]):
+        """Load and cache noise files with proper resampling"""
+        for path in file_paths:
+            try:
+                noise, orig_sr = torchaudio.load(str(path))
+                if noise.shape[0] > 1:
+                    noise = noise.mean(dim=0, keepdim=True)
+
+                if orig_sr != self.sample_rate:
+                    if orig_sr not in self.resamplers:
+                        self.resamplers[orig_sr] = torchaudio.transforms.Resample(
+                            orig_freq=orig_sr, new_freq=self.sample_rate
+                        )
+                    noise = self.resamplers[orig_sr](noise)
+
+                noise = noise.squeeze()
+                power = noise.pow(2).mean()
+                if power > self.power_threshold:
+                    noise = noise / power.sqrt()
+                    self.noise_cache.append(noise)
+            except Exception as e:
+                print(f"Error loading {path}: {str(e)}")
+
+    def _get_mixed_noise(self, target_length: int) -> torch.Tensor:
+        """Get mixed CHiME + Gaussian noise with configurable ratio"""
+        if target_length <= 0:
+            return torch.empty(0)
+
+        if not self.available_noise_indices:
+            self.available_noise_indices = list(range(len(self.noise_cache)))
+            random.shuffle(self.available_noise_indices)
+
+        noise_idx = self.available_noise_indices.pop()
+        chime_noise = self._get_noise_segment(
+            self.noise_cache[noise_idx], target_length
         )
 
-        # Filter files to only include the desired sample rate
-        self.noise_files = [
-            f for f in self.noise_files if f.name.endswith(audio_suffix)
-        ]
+        gaussian_noise = torch.randn(target_length)
+        if target_length > 1:
+            power = gaussian_noise.pow(2).mean()
+            if power > self.power_threshold:
+                gaussian_noise = gaussian_noise / power.sqrt()
 
-        if not self.noise_files:
-            raise ValueError(f"No CHiME files found with suffix {audio_suffix}")
+        chime_ratio = random.uniform(*self.chime_noise_ratio_range)
+        mixed_noise = (
+            torch.sqrt(torch.tensor(chime_ratio)) * chime_noise
+            + torch.sqrt(torch.tensor(1 - chime_ratio)) * gaussian_noise
+        )
+        return mixed_noise
 
-        print(f"CHiMeNoiseDataset initialized with {len(self.noise_files)} CHiME files")
+    def _scale_noise_to_snr(
+        self, noise: torch.Tensor, reference_signal: torch.Tensor, snr_db: float
+    ) -> torch.Tensor:
+        """Scale noise to achieve target SNR relative to reference signal power"""
+        # Handle empty signals
+        if reference_signal.numel() == 0 or noise.numel() == 0:
+            return noise
+
+        signal_power = reference_signal.pow(2).mean()
+        if signal_power < self.power_threshold:
+            # Use fallback if reference is too quiet
+            signal_power = 10 ** (self.fallback_snr_db / 10)
+
+        noise_power = noise.pow(2).mean()
+        if noise_power < self.power_threshold:
+            return noise  # Can't scale zero noise
+
+        # Calculate required scaling factor
+        snr_linear = 10 ** (snr_db / 10)
+        scale = torch.sqrt(signal_power / (snr_linear * noise_power + 1e-9))
+        return noise * scale
+
+    def __getitem__(self, idx) -> Dict:
+        sample = self.base_dataset[idx]
+        # Clone tensors to avoid modifying cached originals
+        audio = sample["audio"].clone()
+        periodicity = sample.get("periodicity")
+        pitch = sample.get("pitch")
+
+        # Preserve original if exists, else None
+        if periodicity is not None:
+            periodicity = periodicity.clone()
+        if pitch is not None:
+            pitch = pitch.clone()
+
+        # Ensure audio is 1D (squeeze channel dimension)
+        if audio.dim() > 1:
+            audio = audio.squeeze(0)
+
+        # Apply random voice gain
+        voice_gain_db = random.uniform(*self.voice_gain_range)
+        voice_scale = 10 ** (voice_gain_db / 20)
+        audio = audio * voice_scale
+
+        chunk_length = audio.shape[0]
+
+        # Skip augmentation for too small chunks
+        if chunk_length < self.hop_size:
+            sample["audio"] = audio
+            return sample
+
+        # Apply background noise
+        background_noise = self._get_mixed_noise(chunk_length)
+        if background_noise.numel() > 0:
+            background_snr = random.uniform(*self.background_snr_range)
+            audio = self._apply_voice_aware_snr(
+                audio, background_noise, background_snr, periodicity
+            )
+
+        # Prevent clipping after all processing
+        audio = torch.clamp(audio, -1.0, 1.0)
+
+        # Update sample with modified tensors
+        sample["audio"] = audio
+        if periodicity is not None:
+            sample["periodicity"] = periodicity
+        if pitch is not None:
+            sample["pitch"] = pitch
+        return sample
+
+    def _get_noise_segment(
+        self, noise: torch.Tensor, target_length: int
+    ) -> torch.Tensor:
+        """Extract noise segment without redundant normalization"""
+        if target_length <= 0:
+            return torch.empty(0)
+
+        noise_len = noise.size(0)
+        if noise_len >= target_length:
+            start = random.randint(0, noise_len - target_length)
+            return noise[start : start + target_length]
+        else:
+            # Repeat noise to cover target length
+            repeats = (target_length + noise_len - 1) // noise_len
+            return noise.repeat(repeats)[:target_length]
+
+    def _apply_voice_aware_snr(
+        self,
+        signal: torch.Tensor,
+        noise: torch.Tensor,
+        snr_db: float,
+        periodicity: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        """Apply SNR normalization based on voiced segments"""
+        if signal.numel() == 0:
+            return signal
+
+        # Handle silent segments
+        if periodicity is not None and periodicity.sum() == 0:
+            snr_db = self.fallback_snr_db
+
+        # Compute signal power based on voiced regions
+        if periodicity is not None and periodicity.sum() > 0:
+            signal_power = self._compute_voiced_power(signal, periodicity)
+        else:
+            signal_power = signal.pow(2).mean()
+
+        noise_power = noise.pow(2).mean()
+        if noise_power < self.power_threshold:
+            return signal
+
+        # Calculate scaling factor
+        snr_linear = 10 ** (snr_db / 10)
+        scale = torch.sqrt(signal_power / (snr_linear * noise_power + 1e-9))
+        return (signal + scale * noise).clamp(-1, 1)
+
+    def _compute_voiced_power(
+        self,
+        signal: torch.Tensor,
+        periodicity: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compute signal power on voiced frames only."""
+        if signal.numel() == 0 or periodicity.numel() == 0 or periodicity.sum() == 0:
+            return signal.pow(2).mean() if signal.numel() > 0 else torch.tensor(0.0)
+
+        periodicity_mask = (periodicity > 0).squeeze()
+
+        # Create a sample-level mask
+        sample_mask = torch.zeros_like(signal, dtype=torch.bool)
+        for i in torch.where(periodicity_mask)[0]:
+            start = i * self.hop_size
+            end = min(start + self.hop_size, len(sample_mask))
+            if start < len(sample_mask):
+                sample_mask[start:end] = True
+
+        voiced_samples = signal[sample_mask]
+        if voiced_samples.numel() > 0:
+            return voiced_samples.pow(2).mean()
+        else:
+            return signal.pow(2).mean()  # Fallback

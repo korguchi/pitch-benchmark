@@ -1,10 +1,11 @@
-import torch
-from pathlib import Path
-import torchaudio
-import torch.nn.functional as F
-import numpy as np
-from typing import Dict, Tuple, Union, Optional, List
 from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+import torchaudio
 
 
 class PitchDataset(ABC, torch.utils.data.Dataset):
@@ -17,8 +18,6 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
     Args:
         sample_rate (int): Target sample rate in Hz
         hop_size (int): Number of audio samples between consecutive frames
-        fmin (float, optional): Minimum frequency in Hz. Defaults to 20.0
-        fmax (float, optional): Maximum frequency in Hz. Defaults to 2000.0
         clip_pitch (bool, optional): Whether to clip pitch values to [fmin, fmax] range.
             If False (default), out-of-range pitch values are preserved but their
             periodicity is set to zero, indicating unreliable pitch detection.
@@ -27,24 +26,30 @@ class PitchDataset(ABC, torch.utils.data.Dataset):
         normalize_audio (bool, optional): Whether to normalize audio to [-1, 1]. Defaults to True
     """
 
+    DEFAULT_FMIN = 46.875  # Default minimum frequency (G1)
+    DEFAULT_FMAX = 2093.75  # Default maximum frequency (C7)
+
     def __init__(
         self,
         sample_rate: int,
         hop_size: int,
-        fmin: float = 20.0,
-        fmax: float = 2000.0,
         clip_pitch: bool = False,
         normalize_audio: bool = True,
     ):
         super().__init__()
-        self._validate_init_params(sample_rate, hop_size, fmin, fmax)
 
         self.sample_rate = sample_rate
         self.hop_size = hop_size
-        self.fmin = fmin
-        self.fmax = fmax
+
+        # Check if the subclass has defined its own fmin/fmax.
+        # If not, getattr falls back to the default values.
+        # self.__class__ refers to the specific subclass (e.g., PitchDatasetBach10Synth).
+        self.fmin = getattr(self.__class__, "fmin", self.DEFAULT_FMIN)
+        self.fmax = getattr(self.__class__, "fmax", self.DEFAULT_FMAX)
+
         self.clip_pitch = clip_pitch
         self.normalize_audio = normalize_audio
+        self._validate_init_params(sample_rate, hop_size, self.fmin, self.fmax)
 
     def _validate_init_params(
         self, sample_rate: int, hop_size: int, fmin: float, fmax: float

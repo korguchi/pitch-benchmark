@@ -1,63 +1,86 @@
-import torch
 from pathlib import Path
-import torchaudio
-from typing import Dict, List, Tuple, Union, Set
+from typing import Dict, List, Set, Tuple, Union
+
 import numpy as np
+import torch
+import torchaudio
+
 from .base import PitchDataset
 
-CORRUPT_FILES_PATH = Path(__file__).parent / "PTDB_CORRUPT_FILES.txt"
+NOISY_FILES_PATH = Path(__file__).parent / "PTDB_NOISY_FILES.txt"
 
 
-class PitchDatasetPTDB(PitchDataset):
+class PitchDatasetPTDBBase(PitchDataset):
     """
     Implementation of PitchDataset for the Pitch Tracking Database (PTDB).
 
     Args:
         root_dir (str): Root directory of the PTDB dataset
         use_cache (bool, optional): Whether to cache loaded data. Defaults to True
+        subset (str): The subset to load. One of "clean", "noisy", or "all".
+                      - "clean": Excludes files identified as noisy.
+                      - "noisy": Includes only the files identified as noisy.
+                      - "all": Includes all files.
         **kwargs: Additional arguments passed to PitchDataset
     """
 
-    def __init__(self, root_dir: str, use_cache: bool = True, **kwargs):
+    fmin = 65
+    fmax = 300
+
+    def __init__(
+        self,
+        root_dir: str,
+        use_cache: bool = True,
+        subset: str = "clean",
+        **kwargs,
+    ):
         super().__init__(**kwargs)
 
         self.root_dir = Path(root_dir)
         if not self.root_dir.exists():
             raise FileNotFoundError(f"Root directory '{root_dir}' does not exist")
 
+        self.subset = subset.lower()
+        if self.subset not in ["clean", "noisy", "all"]:
+            raise ValueError(
+                f"Invalid subset '{subset}'. Must be one of 'clean', 'noisy', or 'all'."
+            )
+
         self.use_cache = use_cache
         self.data_cache: Dict[int, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
-        self.corrupt_files = self._load_corrupt_files()
+        self.noisy_files = self._load_noisy_files()
 
         # Find all valid wav-f0 pairs
         self.wav_f0_pairs = self._find_wav_f0_pairs()
         if not self.wav_f0_pairs:
-            raise ValueError(f"No valid wav-f0 pairs found in '{root_dir}'")
+            raise ValueError(
+                f"No valid wav-f0 pairs found for subset '{self.subset}' in '{root_dir}'"
+            )
 
-    def _load_corrupt_files(self) -> Set[str]:
+    def _load_noisy_files(self) -> Set[str]:
         """
-        Load the list of corrupt files identified by quality metrics.
+        Load the list of noisy files identified by quality metrics.
 
-        The corrupt files listed in CORRUPT_FILES_PATH were identified through
+        The noisy files listed in NOISY_FILES_PATH were identified through
         analysis of pitch tracking and signal quality metrics. These files
         exhibited severe issues such as low harmonic mean across accuracy metrics,
         high pitch deviation (cents error), poor recall, or suspicious error patterns.
 
-        347 files (7.4% of the dataset) were identified as corrupt, ordered by descending severity.
+        347 files (7.4% of the dataset) were identified as noisy, ordered by descending severity.
 
         Returns:
-            Set[str]: A set of basenames (filenames only, no paths) for the corrupt files.
+            Set[str]: A set of basenames (filenames only, no paths) for the noisy files.
 
         Raises:
-            FileNotFoundError: If CORRUPT_FILES_PATH does not exist.
+            FileNotFoundError: If NOISY_FILES_PATH does not exist.
         """
         try:
-            with open(CORRUPT_FILES_PATH, "r") as f:
+            with open(NOISY_FILES_PATH, "r") as f:
                 return {line.strip() for line in f if line.strip()}
         except FileNotFoundError:
             raise FileNotFoundError(
-                f"Corrupt files list not found at {CORRUPT_FILES_PATH}. "
-                "Please ensure PTDB_CORRUPT_FILES.txt exists in the datasets directory."
+                f"Noisy files list not found at {NOISY_FILES_PATH}. "
+                "Please ensure PTDB_NOISY_FILES.txt exists in the datasets directory."
             )
 
     def _find_wav_f0_pairs(self) -> List[Tuple[Path, Path]]:
@@ -71,8 +94,12 @@ class PitchDatasetPTDB(PitchDataset):
                 continue
 
             for wav_path in mic_dir.rglob("*.wav"):
-                if wav_path.name in self.corrupt_files:
+                is_noisy = wav_path.name in self.noisy_files
+                if self.subset == "clean" and is_noisy:
                     continue
+                if self.subset == "noisy" and not is_noisy:
+                    continue
+
                 f0_path = ref_dir / wav_path.relative_to(mic_dir).with_name(
                     wav_path.name.replace("mic_", "ref_").replace(".wav", ".f0")
                 )
@@ -125,3 +152,26 @@ class PitchDatasetPTDB(PitchDataset):
             "periodicity": periodicity,
             "wav_path": self.wav_f0_pairs[idx][0],
         }
+
+
+class PitchDatasetPTDB(PitchDatasetPTDBBase):
+    """
+    Loads the "clean" subset of the PTDB dataset.
+
+    This class excludes the 347 files identified as being noisy.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(subset="clean", **kwargs)
+
+
+class PitchDatasetPTDBNoisy(PitchDatasetPTDBBase):
+    """
+    Loads the "noisy" subset of the PTDB dataset.
+
+    This class includes only the 347 files identified as being noisy.
+    It is useful as a challenging, held-out test set.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(subset="noisy", **kwargs)

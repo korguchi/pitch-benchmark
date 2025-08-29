@@ -1,6 +1,8 @@
+from typing import Tuple
+
 import numpy as np
 from pysptk import sptk
-from typing import Tuple
+
 from .base import ThresholdPitchAlgorithm
 
 
@@ -28,3 +30,6 @@ class SWIPEPitchAlgorithm(ThresholdPitchAlgorithm):
         times = (np.arange(n_frames) * self.hop_size + half_hop) / self.sample_rate
 
         return times, f0, (f0 >= self.fmin).astype(np.float32)
+
+    def _get_default_threshold(self) -> float:
+        return 0.4

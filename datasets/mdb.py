@@ -1,8 +1,10 @@
-import torch
 from pathlib import Path
-import torchaudio
 from typing import Dict, List, Tuple, Union
+
 import pandas as pd
+import torch
+import torchaudio
+
 from .base import PitchDataset
 
 
@@ -18,6 +20,9 @@ class PitchDatasetMDBStemSynth(PitchDataset):
         use_cache (bool, optional): Whether to cache loaded data. Defaults to True
         **kwargs: Additional arguments passed to PitchDataset
     """
+
+    fmin = 65
+    fmax = 2093
 
     def __init__(self, root_dir: str, use_cache: bool = True, **kwargs):
         super().__init__(**kwargs)

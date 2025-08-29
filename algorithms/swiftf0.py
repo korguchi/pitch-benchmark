@@ -1,6 +1,8 @@
-import numpy as np
 from typing import Tuple
+
+import numpy as np
 from swift_f0 import SwiftF0
+
 from .base import ContinuousPitchAlgorithm
 
 
@@ -20,4 +22,4 @@ class SwiftF0PitchAlgorithm(ContinuousPitchAlgorithm):
         return result.timestamps, result.pitch_hz, result.confidence
 
     def _get_default_threshold(self) -> float:
-        return 0.9
+        return 0.887
