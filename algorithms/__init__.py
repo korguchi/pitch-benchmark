@@ -24,6 +24,11 @@ _ALGORITHM_METADATA = {
         "SPICEPitchAlgorithm",
         ["tensorflow", "tensorflow-hub"],
     ),
+    "RMVPE": (
+        "rmvpe",
+        "RMVPEPitchAlgorithm",
+        ["torch"],
+    ),
 }
 
 # The _REGISTRY now acts as a cache for lazily loaded algorithms.

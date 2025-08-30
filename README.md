@@ -15,13 +15,14 @@ The table below shows the harmonic-mean accuracy score for each algorithm across
 
 | **Algorithm** | **Bach10Synth** | **MDBStemSynth** | **MIR1K** | **NSynth** | **PTDB** | **PTDBNoisy** | **SpeechSynth** | **Vocadito** | **Average** |
 |---|---|---|---|---|---|---|---|---|---|
-| **SwiftF0** | 97.5% | 92.0% | 95.0% | **89.3%** | 90.4% | 74.0% | **90.7%** | 92.6% | **90.2%** |
+| **SwiftF0** | 97.5% | 92.0% | 95.0% | **89.3%** | 90.4% | 74.0% | 90.7% | 92.6% | **90.2%** |
 | CREPE | **98.5%** | 90.5% | **95.7%** | 80.2% | 79.7% | 53.8% | 88.3% | **95.6%** | 85.3% |
 | PENN | 97.3% | **94.0%** | 89.0% | 63.3% | **91.0%** | **76.4%** | 84.8% | 82.4% | 84.8% |
 | Praat | 96.0% | 90.7% | 92.6% | 70.7% | 86.2% | 65.3% | 88.2% | 88.2% | 84.7% |
 | SPICE | 95.0% | 89.4% | 92.7% | 68.8% | 77.8% | 55.9% | 87.9% | 92.3% | 82.5% |
 | TorchCREPE | 96.7% | 85.1% | 71.4% | 83.8% | 78.3% | 61.2% | 79.7% | 89.0% | 80.6% |
 | pYIN | 97.5% | 90.3% | 91.2% | 74.3% | 72.1% | 43.2% | 81.4% | 79.5% | 78.7% |
+| RMVPE | 87.6% | 38.2% | 91.2% | 68.9% | 83.2% | 63.8% | **92.1%** | 82.2% | 75.9% |
 | RAPT | 91.9% | 79.6% | 82.4% | 54.6% | 68.4% | 48.9% | 74.3% | 87.5% | 73.5% |
 | SWIPE | 77.8% | 65.6% | 77.1% | 51.4% | 66.6% | 45.0% | 77.1% | 66.6% | 65.9% |
 | YAAPT | 58.5% | 39.6% | 82.0% | 6.4% | 69.8% | 51.7% | 83.5% | 88.6% | 60.0% |
@@ -107,6 +108,7 @@ The benchmark includes implementations of these algorithms:
 - [PENN](https://github.com/interactiveaudiolab/penn) - Pitch-Estimating Neural Networks
 - [BasicPitch](https://github.com/spotify/basic-pitch) - Spotify's multi-instrument pitch detector
 - [SPICE](https://www.tensorflow.org/hub/tutorials/spice) - Self-supervised pitch estimation
+- [RMVPE](https://github.com/Dream-High/RMVPE/) - A Robust Model for Vocal Pitch Estimation in Polyphonic Music
 
 **Classical Methods:**
 - [Praat](https://github.com/YannickJadoul/Parselmouth) - Autocorrelation-based
