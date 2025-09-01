@@ -7,8 +7,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from librosa.filters import mel
-from librosa.util import pad_center
-from scipy.signal import get_window
 
 from .base import ContinuousPitchAlgorithm
 
@@ -73,18 +71,19 @@ class MelSpectrogram(torch.nn.Module):
         n_fft=None,
         mel_fmin=0,
         mel_fmax=None,
-        clamp = 1e-5
+        clamp=1e-5,
     ):
         super().__init__()
         n_fft = win_length if n_fft is None else n_fft
         self.hann_window = {}
         mel_basis = mel(
             sr=sampling_rate,
-            n_fft=n_fft, 
-            n_mels=n_mel_channels, 
-            fmin=mel_fmin, 
+            n_fft=n_fft,
+            n_mels=n_mel_channels,
+            fmin=mel_fmin,
             fmax=mel_fmax,
-            htk=True)
+            htk=True,
+        )
         mel_basis = torch.from_numpy(mel_basis).float()
         self.register_buffer("mel_basis", mel_basis)
         self.n_fft = win_length if n_fft is None else n_fft
@@ -95,15 +94,17 @@ class MelSpectrogram(torch.nn.Module):
         self.clamp = clamp
 
     def forward(self, audio, keyshift=0, speed=1, center=True):
-        factor = 2 ** (keyshift / 12)       
+        factor = 2 ** (keyshift / 12)
         n_fft_new = int(np.round(self.n_fft * factor))
         win_length_new = int(np.round(self.win_length * factor))
         hop_length_new = int(np.round(self.hop_length * speed))
-        
-        keyshift_key = str(keyshift)+'_'+str(audio.device)
+
+        keyshift_key = str(keyshift) + "_" + str(audio.device)
         if keyshift_key not in self.hann_window:
-            self.hann_window[keyshift_key] = torch.hann_window(win_length_new).to(audio.device)
-            
+            self.hann_window[keyshift_key] = torch.hann_window(
+                win_length_new
+            ).to(audio.device)
+
         fft = torch.stft(
             audio,
             n_fft=n_fft_new,
@@ -111,16 +112,19 @@ class MelSpectrogram(torch.nn.Module):
             win_length=win_length_new,
             window=self.hann_window[keyshift_key],
             center=center,
-            return_complex=True)
+            return_complex=True,
+        )
         magnitude = torch.sqrt(fft.real.pow(2) + fft.imag.pow(2))
-        
+
         if keyshift != 0:
             size = self.n_fft // 2 + 1
             resize = magnitude.size(1)
             if resize < size:
-                magnitude = F.pad(magnitude, (0, 0, 0, size-resize))
-            magnitude = magnitude[:, :size, :] * self.win_length / win_length_new
-            
+                magnitude = F.pad(magnitude, (0, 0, 0, size - resize))
+            magnitude = (
+                magnitude[:, :size, :] * self.win_length / win_length_new
+            )
+
         mel_output = torch.matmul(self.mel_basis, magnitude)
         log_mel_spec = torch.log(torch.clamp(mel_output, min=self.clamp))
         return log_mel_spec
@@ -418,7 +422,7 @@ class E2E0(nn.Module):
         n_frames = mel.shape[-1]
         n_pad = 32 * ((n_frames - 1) // 32 + 1) - n_frames
         if n_pad > 0:
-            mel = F.pad(mel, (0, n_pad), mode='constant')
+            mel = F.pad(mel, (0, n_pad), mode="constant")
         mel = mel.transpose(-1, -2).unsqueeze(1)
         x = self.unet(mel)
         if n_pad > 0:
@@ -455,8 +459,8 @@ def to_local_average_cents(salience, center=None, thred=0.0):
         )
 
     raise Exception("label should be either 1d or 2d ndarray")
-    
-    
+
+
 class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
     _name = "RMVPE"
 
@@ -500,8 +504,8 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
         checkpoint = torch.load(model_path, map_location=self.device)
 
         # Handle DataParallel wrapper
-        if isinstance(checkpoint, dict) and 'model' in checkpoint:
-            checkpoint = checkpoint['model']
+        if isinstance(checkpoint, dict) and "model" in checkpoint:
+            checkpoint = checkpoint["model"]
         if hasattr(checkpoint, "module"):
             state_dict = checkpoint.module.state_dict()
         elif isinstance(checkpoint, dict) and "state_dict" in checkpoint:
@@ -576,14 +580,36 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
         audio_processed = self._preprocess_audio(audio)
 
         # Convert to torch tensor
-        audio_tensor = torch.from_numpy(audio_processed).float().to(self.device)
+        audio_tensor = (
+            torch.from_numpy(audio_processed)
+            .float()
+            .to(self.device)
+            .contiguous()
+        )
 
         # Run inference
-        with torch.no_grad():
-            pitch_pred = self.model(audio_tensor).squeeze(0)
+        with torch.inference_mode():
+            try:
+                pitch_pred = self.model(audio_tensor).squeeze(0)
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    # Move to CPU for this sample only
+                    audio_tensor = audio_tensor.cpu()
+                    self.model = self.model.cpu()
+                    pitch_pred = self.model(audio_tensor).squeeze(0)
+                    self.model = self.model.cuda()  # Move back for next sample
+                else:
+                    raise e
 
         # Convert to frequency and periodicity
         pitch_pred_np = pitch_pred.cpu().numpy()
+
+        del audio_tensor
+        del pitch_pred
+        import gc
+
+        gc.collect()
+        torch.cuda.empty_cache()
 
         # Convert pitch prediction to cents then to Hz
         cents = to_local_average_cents(
@@ -605,7 +631,7 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
         model_hopsize_seconds = self.model_hop_length / SAMPLE_RATE
         n_frames = len(f0)
         times = np.arange(n_frames) * model_hopsize_seconds
-        
+
         return times, f0, periodicity
 
     def _get_default_threshold(self) -> float:

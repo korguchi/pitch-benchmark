@@ -50,14 +50,14 @@ The benchmark evaluates algorithms across diverse datasets covering speech, musi
 
 | **Algorithm** | **Bach10Synth** | **MDBStemSynth** | **MIR1K** | **NSynth** | **PTDB** | **PTDBNoisy** | **SpeechSynth** | **Vocadito** | **Average** |
 |---|---|---|---|---|---|---|---|---|---|
-| **SwiftF0** | 97.5% | 92.0% | 95.0% | **89.3%** | 90.4% | 74.0% | 90.7% | 92.6% | **90.2%** |
-| CREPE | **98.5%** | 90.5% | **95.7%** | 80.2% | 79.7% | 53.8% | 88.3% | **95.6%** | 85.3% |
+| **SwiftF0** | 97.5% | 92.0% | 95.0% | **89.3%** | 90.4% | 74.0% | **90.7%** | 92.6% | **90.2%** |
+| RMVPE | 98.1% | 90.6% | **96.0%** | 68.2% | 88.9% | 68.5% | 90.6% | **96.4%** | 87.2% |
+| CREPE | **98.5%** | 90.5% | 95.7% | 80.2% | 79.7% | 53.8% | 88.3% | 95.6% | 85.3% |
 | PENN | 97.3% | **94.0%** | 89.0% | 63.3% | **91.0%** | **76.4%** | 84.8% | 82.4% | 84.8% |
 | Praat | 96.0% | 90.7% | 92.6% | 70.7% | 86.2% | 65.3% | 88.2% | 88.2% | 84.7% |
 | SPICE | 95.0% | 89.4% | 92.7% | 68.8% | 77.8% | 55.9% | 87.9% | 92.3% | 82.5% |
 | TorchCREPE | 96.7% | 85.1% | 71.4% | 83.8% | 78.3% | 61.2% | 79.7% | 89.0% | 80.6% |
 | pYIN | 97.5% | 90.3% | 91.2% | 74.3% | 72.1% | 43.2% | 81.4% | 79.5% | 78.7% |
-| RMVPE | 87.6% | 38.2% | 91.2% | 68.9% | 83.2% | 63.8% | **92.1%** | 82.2% | 75.9% |
 | RAPT | 91.9% | 79.6% | 82.4% | 54.6% | 68.4% | 48.9% | 74.3% | 87.5% | 73.5% |
 | SWIPE | 77.8% | 65.6% | 77.1% | 51.4% | 66.6% | 45.0% | 77.1% | 66.6% | 65.9% |
 | YAAPT | 58.5% | 39.6% | 82.0% | 6.4% | 69.8% | 51.7% | 83.5% | 88.6% | 60.0% |
@@ -67,18 +67,18 @@ The benchmark evaluates algorithms across diverse datasets covering speech, musi
 
 | **Algorithm** | **CPU Time (ms) ↓** | **Relative Speed ↑** |
 |---|---|---|
-| **Praat** | **2.5** | **544.90x** |
-| RAPT | 3.2 | 414.09x |
-| SwiftF0 | 14.3 | 93.85x |
-| BasicPitch | 18.3 | 73.07x |
-| SPICE | 24.3 | 55.11x |
-| YAAPT | 29.5 | 45.29x |
-| SWIPE | 32.7 | 40.98x |
-| PENN | 148.2 | 9.03x |
-| RMVPE | 163.9 | 8.16x |
-| pYIN | 252.2 | 5.31x |
-| TorchCREPE | 648.5 | 2.06x |
-| CREPE | 1274.2 | 1.00x |
+| **Praat** | **2.8** | **534.15x** |
+| RAPT | 3.3 | 454.63x |
+| SwiftF0 | 16.2 | 91.86x |
+| BasicPitch | 23.3 | 64.01x |
+| SPICE | 27.5 | 54.15x |
+| YAAPT | 33.4 | 44.59x |
+| SWIPE | 36.7 | 40.55x |
+| PENN | 126.6 | 11.76x |
+| pYIN | 274.6 | 5.42x |
+| RMVPE | 293.3 | 5.08x |
+| TorchCREPE | 722.0 | 2.06x |
+| CREPE | 1425.9 | 1.00x |
 
 ## Detailed Performance Analysis
 
@@ -92,7 +92,7 @@ Measures how well algorithms distinguish between voiced (pitched) and unvoiced (
 | PENN | 0.937 | 0.751 | 0.827 |
 | Praat | **0.937** | 0.794 | 0.857 |
 | RAPT | 0.844 | 0.897 | 0.857 |
-| RMVPE | 0.871 | 0.742 | 0.795 |
+| RMVPE | 0.902 | 0.793 | 0.837 |
 | SPICE | 0.823 | 0.804 | 0.808 |
 | SWIPE | 0.777 | 0.875 | 0.803 |
 | **SwiftF0** | 0.903 | 0.871 | **0.885** |
@@ -110,7 +110,7 @@ Detailed pitch estimation accuracy across different error types and magnitudes.
 | PENN | 0.895 | 0.912 | 48.7 | 28.7 | 0.024 | 0.032 |
 | Praat | 0.907 | 0.928 | 54.1 | 40.2 | 0.029 | 0.036 |
 | RAPT | 0.774 | 0.793 | 114.5 | 63.8 | 0.059 | 0.085 |
-| RMVPE | 0.769 | 0.782 | 84.2 | 40.1 | 0.034 | 0.087 |
+| RMVPE | 0.921 | 0.932 | 40.9 | 30.1 | 0.020 | 0.022 |
 | SPICE | 0.862 | 0.875 | 60.4 | 35.6 | 0.028 | 0.039 |
 | SWIPE | 0.799 | 0.846 | 140.0 | 75.4 | 0.087 | 0.102 |
 | SwiftF0 | 0.905 | 0.911 | **35.4** | **25.1** | **0.012** | **0.017** |
@@ -128,9 +128,9 @@ Measures the temporal stability and continuity of pitch tracks.
 
 | **Algorithm** | **Relative Smoothness ↓** | **Continuity Breaks ↓** | **Overall Smoothness Rank ↓** |
 |---|---|---|---|
+| **RMVPE** | 1.297 | 0.843 | **4.5** |
 | **SPICE** | 1.766 | 0.638 | **4.5** |
 | **SwiftF0** | 1.704 | 0.742 | **4.5** |
-| RMVPE | 1.154 | 0.873 | 5.0 |
 | RAPT | 3.568 | 0.576 | 6.0 |
 | SWIPE | 3.659 | 0.557 | 6.0 |
 | CREPE | 1.380 | 0.933 | 6.5 |
@@ -138,7 +138,7 @@ Measures the temporal stability and continuity of pitch tracks.
 | TorchCREPE | **0.848** | 0.961 | 6.5 |
 | YAAPT | 5.302 | **0.464** | 6.5 |
 | Praat | 1.827 | 0.903 | 7.5 |
-| pYIN | 3.348 | 0.869 | 7.5 |
+| pYIN | 3.348 | 0.869 | 8.0 |
 | BasicPitch | 4.088 | 0.936 | 11.0 |
 
 **Metric Definitions:**
@@ -156,7 +156,7 @@ Voicing confidence thresholds that maximize overall performance scores.
 | PENN | 0.388 | 0.093 | 0.20-0.50 |
 | Praat | 0.775 | 0.097 | 0.60-0.90 |
 | RAPT | 0.525 | 0.290 | 0.00-0.80 |
-| RMVPE | 0.750 | 0.071 | 0.60-0.80 |
+| RMVPE | 0.688 | 0.078 | 0.60-0.80 |
 | SPICE | 0.825 | 0.066 | 0.70-0.90 |
 | SWIPE | 0.400 | 0.304 | 0.00-0.80 |
 | SwiftF0 | 0.887 | 0.033 | 0.80-0.90 |
@@ -174,7 +174,7 @@ Measures performance stability across different datasets using Coefficient of Va
 | PENN | 0.121 | 0.239 |
 | Praat | 0.120 | 0.125 |
 | RAPT | 0.195 | 0.553 |
-| RMVPE | 0.226 | 0.094 |
+| RMVPE | 0.129 | 0.114 |
 | SPICE | 0.157 | 0.080 |
 | SWIPE | 0.173 | 0.760 |
 | SwiftF0 | **0.073** | 0.037 |
@@ -195,7 +195,7 @@ Measures performance stability across different datasets using Coefficient of Va
 | PENN | 84.9% | 84.7% |
 | Praat | 86.4% | 83.1% |
 | RAPT | 75.1% | 71.8% |
-| RMVPE | 71.7% | 80.1% |
+| RMVPE | 86.9% | 87.5% |
 | SPICE | 85.3% | 79.7% |
 | SWIPE | 68.0% | 63.8% |
 | **SwiftF0** | **92.3%** | **88.0%** |
@@ -214,7 +214,7 @@ Measures performance stability across different datasets using Coefficient of Va
 | PENN | 84.1% | 85.2% |
 | Praat | 79.9% | 87.6% |
 | RAPT | 63.9% | 79.2% |
-| RMVPE | 79.7% | 73.6% |
+| RMVPE | 82.7% | 89.9% |
 | SPICE | 73.9% | 87.6% |
 | SWIPE | 62.9% | 67.7% |
 | **SwiftF0** | **85.0%** | **93.3%** |
@@ -231,14 +231,14 @@ Measures performance stability across different datasets using Coefficient of Va
 | **Algorithm** | **Synthetic + Speech** | **Synthetic + Music** | **Real + Speech** | **Real + Music** |
 |---|---|---|---|---|
 | BasicPitch | 61.2% | 37.9% | 17.8% | 27.2% |
-| CREPE | 88.3% | 89.7% | 66.7% | **95.6%** |
+| CREPE | 88.3% | 89.7% | 66.7% | 95.6% |
 | PENN | 84.8% | 84.9% | **83.7%** | 85.7% |
 | Praat | 88.2% | 85.8% | 75.8% | 90.4% |
 | RAPT | 74.3% | 75.4% | 58.7% | 85.0% |
-| **RMVPE** | **92.1%** | 64.9% | 73.5% | 86.7% |
+| **RMVPE** | **90.6%** | 85.7% | 78.7% | **96.2%** |
 | SPICE | 87.9% | 84.4% | 66.8% | 92.5% |
 | SWIPE | 77.1% | 65.0% | 55.8% | 71.8% |
-| SwiftF0 | 90.7% | **92.9%** | 82.2% | 93.8% |
+| **SwiftF0** | **90.7%** | **92.9%** | 82.2% | 93.8% |
 | TorchCREPE | 79.7% | 88.5% | 69.7% | 80.2% |
 | YAAPT | 83.5% | 34.8% | 60.8% | 85.3% |
 | pYIN | 81.4% | 87.4% | 57.6% | 85.4% |
