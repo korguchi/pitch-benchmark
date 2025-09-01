@@ -18,7 +18,7 @@ N_CLASS = 360
 N_MELS = 128
 MEL_FMIN = 30
 MEL_FMAX = SAMPLE_RATE // 2
-WINDOW_LENGTH = 2048
+WINDOW_LENGTH = 1024
 
 # Model URLs
 DEFAULT_MODEL_URL = (
@@ -63,93 +63,67 @@ def get_model_path(model_path: str = None) -> str:
     return str(model_path)
 
 
-class STFT(nn.Module):
-    def __init__(
-        self, filter_length, hop_length, win_length=None, window="hann"
-    ):
-        super(STFT, self).__init__()
-        if win_length is None:
-            win_length = filter_length
-
-        self.filter_length = filter_length
-        self.hop_length = hop_length
-        self.win_length = win_length
-        self.window = window
-        self.forward_transform = None
-        fourier_basis = np.fft.fft(np.eye(self.filter_length))
-
-        cutoff = int((self.filter_length / 2 + 1))
-        fourier_basis = np.vstack(
-            [
-                np.real(fourier_basis[:cutoff, :]),
-                np.imag(fourier_basis[:cutoff, :]),
-            ]
-        )
-
-        forward_basis = torch.FloatTensor(fourier_basis[:, None, :])
-
-        if window is not None:
-            assert filter_length >= win_length
-            fft_window = get_window(window, win_length, fftbins=True)
-            fft_window = pad_center(fft_window, size=filter_length)
-            fft_window = torch.from_numpy(fft_window).float()
-            forward_basis *= fft_window
-
-        self.register_buffer("forward_basis", forward_basis.float())
-
-    def forward(self, input_data):
-        num_batches = input_data.size(0)
-        num_samples = input_data.size(1)
-
-        input_data = input_data.view(num_batches, 1, num_samples)
-        forward_transform = F.conv1d(
-            input_data, self.forward_basis, stride=self.hop_length, padding=0
-        )
-
-        cutoff = int((self.filter_length / 2) + 1)
-        real_part = forward_transform[:, :cutoff, :]
-        imag_part = forward_transform[:, cutoff:, :]
-
-        magnitude = torch.sqrt(real_part**2 + imag_part**2)
-        phase = torch.atan2(imag_part, real_part)
-
-        return magnitude, phase
-
-
 class MelSpectrogram(torch.nn.Module):
     def __init__(
         self,
-        n_mels,
-        sample_rate,
-        filter_length,
+        n_mel_channels,
+        sampling_rate,
+        win_length,
         hop_length,
-        win_length=None,
-        mel_fmin=0.0,
+        n_fft=None,
+        mel_fmin=0,
         mel_fmax=None,
+        clamp = 1e-5
     ):
-        super(MelSpectrogram, self).__init__()
-        self.stft = STFT(filter_length, hop_length, win_length)
-
+        super().__init__()
+        n_fft = win_length if n_fft is None else n_fft
+        self.hann_window = {}
         mel_basis = mel(
-            sr=sample_rate,
-            n_fft=filter_length,
-            n_mels=n_mels,
-            fmin=mel_fmin,
+            sr=sampling_rate,
+            n_fft=n_fft, 
+            n_mels=n_mel_channels, 
+            fmin=mel_fmin, 
             fmax=mel_fmax,
-            htk=True,
-        )
+            htk=True)
         mel_basis = torch.from_numpy(mel_basis).float()
         self.register_buffer("mel_basis", mel_basis)
+        self.n_fft = win_length if n_fft is None else n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.sampling_rate = sampling_rate
+        self.n_mel_channels = n_mel_channels
+        self.clamp = clamp
 
-    def forward(self, y):
-        assert torch.min(y.data) >= -1
-        assert torch.max(y.data) <= 1
-
-        magnitudes, phases = self.stft(y)
-        magnitudes = magnitudes.data
-        mel_output = torch.matmul(self.mel_basis, magnitudes)
-        mel_output = torch.log(torch.clamp(mel_output, min=1e-5))
-        return mel_output
+    def forward(self, audio, keyshift=0, speed=1, center=True):
+        factor = 2 ** (keyshift / 12)       
+        n_fft_new = int(np.round(self.n_fft * factor))
+        win_length_new = int(np.round(self.win_length * factor))
+        hop_length_new = int(np.round(self.hop_length * speed))
+        
+        keyshift_key = str(keyshift)+'_'+str(audio.device)
+        if keyshift_key not in self.hann_window:
+            self.hann_window[keyshift_key] = torch.hann_window(win_length_new).to(audio.device)
+            
+        fft = torch.stft(
+            audio,
+            n_fft=n_fft_new,
+            hop_length=hop_length_new,
+            win_length=win_length_new,
+            window=self.hann_window[keyshift_key],
+            center=center,
+            return_complex=True)
+        magnitude = torch.sqrt(fft.real.pow(2) + fft.imag.pow(2))
+        
+        if keyshift != 0:
+            size = self.n_fft // 2 + 1
+            resize = magnitude.size(1)
+            if resize < size:
+                magnitude = F.pad(magnitude, (0, 0, 0, size-resize))
+            magnitude = magnitude[:, :size, :] * self.win_length / win_length_new
+            
+        mel_output = torch.matmul(self.mel_basis, magnitude)
+        log_mel_spec = torch.log(torch.clamp(mel_output, min=self.clamp))
+        return log_mel_spec
 
 
 class ConvBlockRes(nn.Module):
@@ -440,10 +414,16 @@ class E2E0(nn.Module):
             )
 
     def forward(self, x):
-        mel = (
-            self.mel(x.reshape(-1, x.shape[-1])).transpose(-1, -2).unsqueeze(1)
-        )
-        x = self.cnn(self.unet(mel)).transpose(1, 2).flatten(-2)
+        mel = self.mel(x.reshape(-1, x.shape[-1]))
+        n_frames = mel.shape[-1]
+        n_pad = 32 * ((n_frames - 1) // 32 + 1) - n_frames
+        if n_pad > 0:
+            mel = F.pad(mel, (0, n_pad), mode='constant')
+        mel = mel.transpose(-1, -2).unsqueeze(1)
+        x = self.unet(mel)
+        if n_pad > 0:
+            x = x[:, :, :-n_pad, :]
+        x = self.cnn(x).transpose(1, 2).flatten(-2)
         x = self.fc(x)
         return x
 
@@ -475,115 +455,15 @@ def to_local_average_cents(salience, center=None, thred=0.0):
         )
 
     raise Exception("label should be either 1d or 2d ndarray")
-
-
-class RMVPEInference:
-    def __init__(
-        self, model, seg_len, seg_frames, hop_length, batch_size, device
-    ):
-        super(RMVPEInference, self).__init__()
-        self.model = model.eval()
-        self.seg_len = seg_len
-        self.seg_frames = seg_frames
-        self.batch_size = batch_size
-        self.hop_length = hop_length
-        self.device = device
-
-    def inference(self, audio):
-        with torch.no_grad():
-            padded_audio = self.pad_audio(audio)
-            segments = self.en_frame(padded_audio)
-            out_segments = self.forward_in_mini_batch(self.model, segments)
-            out_segments = self.de_frame(out_segments, type_seg="pitch")[
-                : (len(audio) // self.hop_length + 1)
-            ]
-            return out_segments
-
-    def pad_audio(self, audio):
-        audio_len = len(audio)
-        seg_nums = int(np.ceil(audio_len / self.seg_len)) + 1
-        pad_len = seg_nums * self.seg_len - audio_len + self.seg_len // 2
-        padded_audio = torch.cat(
-            [
-                torch.zeros(self.seg_len // 4).to(self.device),
-                audio,
-                torch.zeros(pad_len - self.seg_len // 4).to(self.device),
-            ]
-        )
-        return padded_audio
-
-    def en_frame(self, audio):
-        audio_len = len(audio)
-        assert audio_len % (self.seg_len // 2) == 0
-
-        audio = torch.cat(
-            [
-                torch.zeros(1024).to(self.device),
-                audio,
-                torch.zeros(1024).to(self.device),
-            ]
-        )
-        segments = []
-        start = 0
-        while start + self.seg_len <= audio_len:
-            segments.append(audio[start : start + self.seg_len + 2048])
-            start += self.seg_len // 2
-        segments = torch.stack(segments, dim=0)
-        return segments
-
-    def forward_in_mini_batch(self, model, segments):
-        out_segments = []
-        segments_num = segments.shape[0]
-        batch_start = 0
-        while True:
-            if batch_start + self.batch_size >= segments_num:
-                batch_tmp = segments[batch_start:].shape[0]
-                segment_in = torch.cat(
-                    [
-                        segments[batch_start:],
-                        torch.zeros_like(segments)[
-                            : self.batch_size - batch_tmp
-                        ].to(self.device),
-                    ],
-                    dim=0,
-                )
-                out_tmp = model(segment_in)
-                out_segments.append(out_tmp[:batch_tmp])
-                break
-            else:
-                segment_in = segments[
-                    batch_start : batch_start + self.batch_size
-                ]
-                out_tmp = model(segment_in)
-                out_segments.append(out_tmp)
-            batch_start += self.batch_size
-        out_segments = torch.cat(out_segments, dim=0)
-        return out_segments
-
-    def de_frame(self, segments, type_seg="audio"):
-        output = []
-        if type_seg == "audio":
-            for segment in segments:
-                output.append(
-                    segment[self.seg_len // 4 : int(self.seg_len * 0.75)]
-                )
-        else:
-            for segment in segments:
-                output.append(
-                    segment[self.seg_frames // 4 : int(self.seg_frames * 0.75)]
-                )
-        output = torch.cat(output, dim=0)
-        return output
-
-
+    
+    
 class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
     _name = "RMVPE"
 
     def __init__(
         self,
         model_path: str = None,
-        device: str = "cpu",
-        batch_size: int = 8,
+        device: str = "cuda",
         **kwargs,
     ):
         """
@@ -592,7 +472,6 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
         Args:
             model_path: Path to model weights (.pt file)
             device: Device to run inference on ('cpu' or 'cuda')
-            batch_size: Batch size for inference
             **kwargs: Additional arguments for base class (sample_rate, hop_size, fmin, fmax)
         """
         super().__init__(**kwargs)
@@ -607,11 +486,7 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
 
         # RMVPE model requires fixed hop_length=320 samples (20ms at 16kHz)
         # This is baked into the trained model architecture
-        self.model_hop_length = 320  # Fixed model hop length
-        self.seg_len = (
-            40640  # This gives 128 mel frames which properly divides by 2
-        )
-        self.seg_frames = self.seg_len // self.model_hop_length + 1
+        self.model_hop_length = 160  # Fixed model hop length
 
         # Get model path (auto-download if needed)
         model_path = get_model_path(model_path)
@@ -619,22 +494,14 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
         # Load model
         self.model = self.load_model(model_path)
 
-        # Initialize inference
-        self.inference = RMVPEInference(
-            self.model,
-            seg_len=self.seg_len,
-            seg_frames=self.seg_frames,
-            hop_length=self.model_hop_length,
-            batch_size=batch_size,
-            device=self.device,
-        )
-
     def load_model(self, model_path):
         """Load RMVPE model from checkpoint"""
         model = E2E0(self.model_hop_length, 4, 1, (2, 2))
         checkpoint = torch.load(model_path, map_location=self.device)
 
         # Handle DataParallel wrapper
+        if isinstance(checkpoint, dict) and 'model' in checkpoint:
+            checkpoint = checkpoint['model']
         if hasattr(checkpoint, "module"):
             state_dict = checkpoint.module.state_dict()
         elif isinstance(checkpoint, dict) and "state_dict" in checkpoint:
@@ -712,7 +579,8 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
         audio_tensor = torch.from_numpy(audio_processed).float().to(self.device)
 
         # Run inference
-        pitch_pred = self.inference.inference(audio_tensor)
+        with torch.no_grad():
+            pitch_pred = self.model(audio_tensor).squeeze(0)
 
         # Convert to frequency and periodicity
         pitch_pred_np = pitch_pred.cpu().numpy()
@@ -733,13 +601,13 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
         )
 
         # Calculate time points based on model's internal hop length
-        # The model operates at 16kHz with 320-sample hops (20ms)
+        # The model operates at 16kHz with 160-sample hops (10ms)
         model_hopsize_seconds = self.model_hop_length / SAMPLE_RATE
         n_frames = len(f0)
         times = np.arange(n_frames) * model_hopsize_seconds
-
+        
         return times, f0, periodicity
 
     def _get_default_threshold(self) -> float:
         """Default threshold for RMVPE"""
-        return 0.750
+        return 0.03
